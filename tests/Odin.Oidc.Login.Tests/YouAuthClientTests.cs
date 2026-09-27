@@ -79,8 +79,9 @@ public class YouAuthClientTests
         var token = await client.CompleteAsync(Frodo, keys, callback["public_key"], callback["salt"], CancellationToken.None);
 
         Assert.That(token, Is.EqualTo(identity.ClientAuthToken), "both sides derived the same exchange secret and GCM opened cleanly");
-        var (request, body) = identity.Handler.Requests.Single(r => r.request.RequestUri!.AbsolutePath == "/api/owner/v1/youauth/token");
-        Assert.That(body, Does.Contain($"\"secret_digest\":\"{identity.ExpectedDigest}\""), "YouAuth [100]: the digest of the exchange secret, base64");
+        var (_, body) = identity.Handler.Requests.Single(r => r.request.RequestUri!.AbsolutePath == "/api/owner/v1/youauth/token");
+        var digest = System.Text.Json.JsonDocument.Parse(body!).RootElement.GetProperty("secret_digest").GetString();
+        Assert.That(digest, Is.EqualTo(identity.ExpectedDigest), "YouAuth [100]: the digest of the exchange secret, base64");
     }
 
     [Test]
