@@ -21,7 +21,9 @@ sequenceDiagram
     app->>idn: POST /api/v2/auth/logout (Bearer token): release the registration
     app->>hydra: PUT /admin/oauth2/auth/requests/login/accept {subject: sam.dotyou.cloud}
     hydra->>app: 302 /consent?consent_challenge
-    app->>hydra: PUT .../consent/accept {grant_scope, session.id_token}
+    app->>idn: GET /pub/profile (profile scope): the published name
+    app->>app: remembered or trusted? accept. Else the page: "Let <relying party> know who you are?"
+    app->>hydra: PUT .../consent/accept {grant_scope, remember, session.id_token: name, picture, preferred_username, website}
     hydra->>rp: 302 redirect_uri?code&state
     rp->>hydra: POST /oauth2/token (code, PKCE verifier)
     hydra->>rp: id_token (sub = sam.dotyou.cloud), access token
@@ -34,3 +36,11 @@ sequenceDiagram
 | Hydra's Postgres | OAuth client registrations, signing keys, login/consent sessions (subject, remembered consents), authorization codes, access and refresh tokens | Hydra's own state; an OIDC issuer cannot be stateless |
 | Odin.Oidc.Login | A Data Protection key ring, nothing else at rest | Each login's state lives in a 10-minute encrypted cookie and dies with it |
 | The identity | A domain registration for the broker, between authorize and the broker's logout call | The broker releases it as soon as the identity is proven |
+
+## What a relying party learns
+
+Always `sub`, the identity's domain. Under the `profile` scope also `name`, from the identity's
+public profile card (absent when none is published), `picture` (the identity's public image URL),
+`preferred_username` (the domain) and `website` (`https://` + domain). Read from the identity at
+consent time, never stored by the broker; Hydra keeps them in the consent session for the
+id_token and userinfo. No email: an identity's mail address is not public information.

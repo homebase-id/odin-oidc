@@ -53,6 +53,22 @@ frodo, and the demo relying party shows an id_token whose `sub` is `frodo.dotyou
 Until `oidc.dotyou.cloud` has a certificate on the dev certbot host, the owner's consent page names
 the broker as collab, and collab itself cannot sign in through it.
 
+### 3. A public relying party with PKCE
+
+The way a browser or native app signs in: no client secret, PKCE required. `scripts/demo-rp.mjs`
+is one in eighty lines with no dependencies (Node 18+):
+
+```bash
+scripts/create-public-client.sh > docker/demo-public-client.json   # prints the client id
+node scripts/demo-rp.mjs <client_id>                              # http://127.0.0.1:5556
+```
+
+It prints the id_token's claims and the userinfo answer. With the `profile` scope those carry
+`name` (from the identity's public profile card), `picture` (its public image),
+`preferred_username` and `website`; the consent page names the relying party and lists exactly
+that. "Keep me signed in" on the login page and "Remember this" on the consent page make Hydra
+skip the question for a month on that browser; `prompt=login` from a relying party still asks.
+
 ## Tests, image, CI
 
 `dotnet build odin-oidc.sln --warnaserror` and `dotnet test odin-oidc.sln`; the fakes are described
