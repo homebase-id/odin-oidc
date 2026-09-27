@@ -1,0 +1,15 @@
+<Project>
+  <PropertyGroup>
+    <!-- The sibling odin-core checkout whose Odin.Core and Odin.Core.Cryptography projects the login
+         app references. Override from CI or Docker with -p:OdinCoreDir=...; odin-core.ref names the
+         commit those builds check out. -->
+    <OdinCoreDir Condition="'$(OdinCoreDir)' == ''">$(MSBuildThisFileDirectory)../odin-core/</OdinCoreDir>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+  </PropertyGroup>
+</Project>

@@ -61,3 +61,4 @@ TestResults/
 docker/.env
 keys/
 docker/demo-client.json
+certs/

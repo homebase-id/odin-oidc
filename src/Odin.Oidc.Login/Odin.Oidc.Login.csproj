@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <!-- odin-core's libraries, from the sibling checkout named by OdinCoreDir (Directory.Build.props).
+         The ECDH/HKDF/AES the YouAuth flow needs is the code the identity runs; it is not re-implemented
+         here. Odin.Services is deliberately not referenced: the few wire DTOs are copied into YouAuth/. -->
+    <ProjectReference Include="$(OdinCoreDir)src/core/Odin.Core/Odin.Core.csproj" />
+    <ProjectReference Include="$(OdinCoreDir)src/core/Odin.Core.Cryptography/Odin.Core.Cryptography.csproj" />
+  </ItemGroup>
+
+</Project>
