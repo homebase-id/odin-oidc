@@ -1,10 +1,10 @@
 @page
 @model Odin.Oidc.Login.Pages.ErrorModel
 @{
-    ViewData["Title"] = "Something went wrong";
+    ViewData["Title"] = "Sign-in could not continue";
 }
-<h1>Something went wrong</h1>
-<p>The sign-in could not continue. Go back to the site you were signing in to and try again.</p>
+<h1>Sign-in could not continue</h1>
+<p>@Model.Detail</p>
 @if (Model.RequestId != null)
 {
     <p class="muted">Reference: <code>@Model.RequestId</code></p>

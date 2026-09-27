@@ -54,18 +54,15 @@ public class LoginFlowEndpointTests
     {
         using var app = new BrokerApp();
         using var browser = app.CreateClient();
+        // Hydra's challenges are the encoded flow, over a thousand characters; the cookie carries one.
+        var challenge = new string('c', 1200);
 
-        var response = await PostIdentityAsync(browser, "ch1", "Frodo.DotYou.Cloud");
+        var response = await PostIdentityAsync(browser, challenge, "Frodo.DotYou.Cloud");
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Redirect));
-        var location = response.Headers.Location!;
-        Assert.That(location.ToString(), Does.StartWith($"https://{Frodo}/api/owner/v1/youauth/authorize?"), "lower-cased, and the identity's authorize endpoint");
-        var query = QueryHelpers.ParseQuery(location.Query);
-        Assert.That(query["client_id"].ToString(), Is.EqualTo(app.PublicHost));
-        Assert.That(query["cipher"].ToString(), Is.EqualTo("aes-gcm"));
-        Assert.That(query["redirect_uri"].ToString(), Is.EqualTo($"https://{app.PublicHost}/youauth/callback"));
+        Assert.That(response.Headers.Location!.ToString(), Does.StartWith($"https://{Frodo}/api/owner/v1/youauth/authorize?"), "lower-cased, and the identity's authorize endpoint (YouAuthClientTests pins the query)");
         var setCookie = response.Headers.GetValues("Set-Cookie").Single(c => c.StartsWith($"{LoginFlowCookie.Name}="));
-        Assert.That(setCookie.Length, Is.LessThan(4096), "a browser drops a cookie over 4096 bytes without a word, and the callback then finds no flow");
+        Assert.That(setCookie.Length, Is.LessThan(4096), $"a browser drops a cookie over 4096 bytes without a word, and the callback then finds no flow; this one is {setCookie.Length}");
     }
 
     [Test]
@@ -141,6 +138,7 @@ public class LoginFlowEndpointTests
         var response = await browser.GetAsync(QueryHelpers.AddQueryString("/youauth/callback", callback!));
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+        Assert.That(await response.Content.ReadAsStringAsync(), Does.Contain("Sign-in could not continue"), "the Error page, in words");
         Assert.That(app.Hydra.LoginAccepts, Is.Empty, "nothing was accepted");
         Assert.That(app.Identity.Handler.Requests, Is.Empty, "the identity was not even asked");
     }
@@ -173,6 +171,19 @@ public class LoginFlowEndpointTests
         Assert.That(FakeHydraAdmin.Field(body, "error"), Is.EqualTo("access_denied"), "OAuth's word for it, so the relying party understands");
         Assert.That(FakeHydraAdmin.Field(body, "error_description"), Does.Contain("cancelled-by-user"));
         Assert.That(app.Hydra.LoginAccepts, Is.Empty);
+    }
+
+    [Test]
+    public async Task AChallengeHydraAlreadyAnsweredSendsTheBrowserOn()
+    {
+        using var app = new BrokerApp();
+        app.Hydra.LoginGone = true;
+        using var browser = app.CreateClient();
+
+        var response = await browser.GetAsync("/login?login_challenge=used");
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Redirect), "the browser went back to a page it had left; Hydra says where it should be");
+        Assert.That(response.Headers.Location!.ToString(), Is.EqualTo(FakeHydraAdmin.RedirectTo));
     }
 
     [Test]

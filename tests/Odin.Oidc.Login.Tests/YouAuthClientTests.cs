@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Odin.Oidc.Login.Options;
 using Odin.Oidc.Login.Tests.Fakes;
 using Odin.Oidc.Login.YouAuth;
@@ -16,52 +15,32 @@ public class YouAuthClientTests
 {
     private const string Frodo = "frodo.dotyou.cloud";
 
-    private static BrokerOptions Options(bool requireGcm = false) => new()
+    private static YouAuthClient Client(FakeIdentity identity, string publicOrigin = "https://oidc.example.org")
     {
-        PublicHost = "oidc.example.org",
-        RequireAesGcm = requireGcm,
-    };
-
-    private static YouAuthClient Client(FakeIdentity identity, BrokerOptions? options = null)
-    {
-        var factory = new SingleClientFactory(identity.Handler);
-        return new YouAuthClient(factory, Microsoft.Extensions.Options.Options.Create(options ?? Options()), NullLogger<YouAuthClient>.Instance);
+        var options = new BrokerOptions { PublicOrigin = publicOrigin };
+        return new YouAuthClient(new SingleClientFactory(identity.Handler), Microsoft.Extensions.Options.Options.Create(options), NullLogger<YouAuthClient>.Instance);
     }
 
     [Test]
     public void YouAuth030_TheAuthorizeUrlNamesThisAppAndAsksForAesGcm()
     {
-        var (url, keys) = Client(new FakeIdentity(Frodo)).Begin(Frodo, "state-1");
+        var (url, state, privateKey) = Client(new FakeIdentity(Frodo)).Begin(Frodo);
 
         Assert.That(url.ToString(), Does.StartWith($"https://{Frodo}/api/owner/v1/youauth/authorize?"));
         var query = QueryHelpers.ParseQuery(url.Query);
         Assert.That(query["client_type"].ToString(), Is.EqualTo("domain"));
         Assert.That(query["client_id"].ToString(), Is.EqualTo("oidc.example.org"), "the client id is the broker's host, which is what the identity trusts");
         Assert.That(query["redirect_uri"].ToString(), Is.EqualTo("https://oidc.example.org/youauth/callback"));
-        Assert.That(query["state"].ToString(), Is.EqualTo("state-1"));
+        Assert.That(query["state"].ToString(), Is.EqualTo(state).And.Length.GreaterThanOrEqualTo(43), "32 random bytes, base64url");
         Assert.That(query["cipher"].ToString(), Is.EqualTo("aes-gcm"));
         Assert.That(query["public_key"].ToString(), Is.Not.Empty);
-        Assert.That(keys.PrivateKeyDerBase64, Is.Not.Empty, "the private half must survive to [090]");
-    }
-
-    [Test]
-    public void YouAuth010_TheKeysAreSmallEnoughToTravelInACookie()
-    {
-        var (_, keys) = Client(new FakeIdentity(Frodo)).Begin(Frodo, "s");
-
-        // The DER form is ~1200 base64 chars because BouncyCastle writes the curve parameters out in
-        // full rather than naming P-384; a private JWK would be ~240. Either fits; the whole
-        // EccFullKeyData serialized (~2000) did not, once encrypted and joined by the rest of the state.
-        var size = keys.PasswordBase64.Length + keys.PrivateKeyDerBase64.Length;
-        Assert.That(size, Is.LessThan(1500), $"the flow cookie must stay well under a browser's 4096-byte limit after encryption; keys alone are {size} bytes");
+        Assert.That(privateKey, Is.Not.Empty, "the private half must survive to [090]");
     }
 
     [Test]
     public void YouAuth030_ADevPortGoesOnTheRedirectUriButNotTheClientId()
     {
-        var options = Options();
-        options.PublicPort = 8443;
-        var (url, _) = Client(new FakeIdentity(Frodo), options).Begin(Frodo, "s");
+        var (url, _, _) = Client(new FakeIdentity(Frodo), "https://oidc.example.org:8443").Begin(Frodo);
 
         var query = QueryHelpers.ParseQuery(url.Query);
         Assert.That(query["client_id"].ToString(), Is.EqualTo("oidc.example.org"));
@@ -73,10 +52,10 @@ public class YouAuthClientTests
     {
         var identity = new FakeIdentity(Frodo);
         var client = Client(identity);
-        var (url, keys) = client.Begin(Frodo, "s");
+        var (url, _, privateKey) = client.Begin(Frodo);
         var callback = identity.Authorize(url);
 
-        var token = await client.CompleteAsync(Frodo, keys, callback["public_key"], callback["salt"], CancellationToken.None);
+        var token = await client.CompleteAsync(Frodo, privateKey, callback["public_key"], callback["salt"], CancellationToken.None);
 
         Assert.That(token, Is.EqualTo(identity.ClientAuthToken), "both sides derived the same exchange secret and GCM opened cleanly");
         var (_, body) = identity.Handler.Requests.Single(r => r.request.RequestUri!.AbsolutePath == "/api/owner/v1/youauth/token");
@@ -84,29 +63,18 @@ public class YouAuthClientTests
         Assert.That(digest, Is.EqualTo(identity.ExpectedDigest), "YouAuth [100]: the digest of the exchange secret, base64");
     }
 
-    [Test]
-    public async Task YouAuth150_AnIdentityThatPredatesTheCipherFieldIsOpenedAsCbc()
+    [TestCase("aes-cbc")]
+    [TestCase(null)]
+    public void YouAuth150_ATokenNotSealedWithWhatWasAskedForIsRefused(string? echo)
     {
-        var identity = new FakeIdentity(Frodo) { SealWith = "aes-cbc", EchoCipher = null };
+        var identity = new FakeIdentity(Frodo) { SealWith = "aes-cbc", EchoCipher = echo };
         var client = Client(identity);
-        var (url, keys) = client.Begin(Frodo, "s");
+        var (url, _, privateKey) = client.Begin(Frodo);
         var callback = identity.Authorize(url);
 
-        var token = await client.CompleteAsync(Frodo, keys, callback["public_key"], callback["salt"], CancellationToken.None);
-
-        Assert.That(token, Is.EqualTo(identity.ClientAuthToken));
-    }
-
-    [Test]
-    public void YouAuth150_WithRequireAesGcmACbcTokenIsRefused()
-    {
-        var identity = new FakeIdentity(Frodo) { SealWith = "aes-cbc", EchoCipher = "aes-cbc" };
-        var client = Client(identity, Options(requireGcm: true));
-        var (url, keys) = client.Begin(Frodo, "s");
-        var callback = identity.Authorize(url);
-
-        Assert.That(() => client.CompleteAsync(Frodo, keys, callback["public_key"], callback["salt"], CancellationToken.None),
-            Throws.InstanceOf<YouAuthException>().With.Message.Contains("aes-cbc"));
+        Assert.That(() => client.CompleteAsync(Frodo, privateKey, callback["public_key"], callback["salt"], CancellationToken.None),
+            Throws.InstanceOf<YouAuthException>().With.Message.Contains("aes-gcm"),
+            "an identity that seals with anything else predates the choice; there are none this app should meet");
     }
 
     [Test]

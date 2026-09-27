@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Odin.Core.Util;
@@ -28,63 +27,56 @@ public sealed class LoginModel(HydraAdminClient hydra, YouAuthClient youAuth, Lo
         SameSite = SameSiteMode.Lax,
         Path = "/login",
         MaxAge = TimeSpan.FromDays(365),
-        IsEssential = true,
     };
 
     public string LoginChallenge { get; private set; } = "";
-    public string RelyingPartyName { get; private set; } = "A site";
+    public string RelyingPartyName { get; private set; } = "";
     public string Identity { get; private set; } = "";
     public string? Problem { get; private set; }
 
     public async Task<IActionResult> OnGetAsync([FromQuery(Name = "login_challenge")] string? loginChallenge, CancellationToken ct)
     {
-        if (string.IsNullOrEmpty(loginChallenge))
-        {
-            return BadRequest("Missing login_challenge.");
-        }
-
-        var request = await hydra.GetLoginRequestAsync(loginChallenge, ct);
+        var request = await hydra.GetLoginRequestAsync(Required(loginChallenge), ct);
         if (request.Skip && !string.IsNullOrEmpty(request.Subject))
         {
             // Hydra remembers this browser's session; the identity was proven then.
-            var next = await hydra.AcceptLoginAsync(loginChallenge, new HydraAcceptLogin { Subject = request.Subject }, ct);
-            return Redirect(next);
+            return Redirect(await hydra.AcceptLoginAsync(loginChallenge!, new HydraAcceptLogin { Subject = request.Subject }, ct));
         }
 
-        LoginChallenge = loginChallenge;
-        RelyingPartyName = request.Client?.ClientName is { Length: > 0 } name ? name : request.Client?.ClientId ?? RelyingPartyName;
-        Identity = request.OidcContext?.LoginHint is { Length: > 0 } hint ? hint
-            : Request.Cookies.TryGetValue(RememberedIdentityCookie, out var remembered) ? remembered : "";
+        var remembered = Request.Cookies.TryGetValue(RememberedIdentityCookie, out var value) ? value : "";
+        Show(loginChallenge!, request, request.OidcContext?.LoginHint is { Length: > 0 } hint ? hint : remembered);
         return Page();
     }
 
     public async Task<IActionResult> OnPostAsync([FromForm(Name = "login_challenge")] string? loginChallenge, [FromForm(Name = "identity")] string? identity, CancellationToken ct)
     {
-        if (string.IsNullOrEmpty(loginChallenge))
-        {
-            return BadRequest("Missing login_challenge.");
-        }
-
-        var request = await hydra.GetLoginRequestAsync(loginChallenge, ct);
-        LoginChallenge = loginChallenge;
-        RelyingPartyName = request.Client?.ClientName is { Length: > 0 } name ? name : request.Client?.ClientId ?? RelyingPartyName;
-        Identity = identity?.Trim() ?? "";
-
-        var domain = Identity.ToLowerInvariant();
+        Required(loginChallenge);
+        var typed = identity?.Trim() ?? "";
+        var domain = typed.ToLowerInvariant();
         if (!AsciiDomainNameValidator.TryValidateDomain(domain))
         {
-            Problem = $"'{Identity}' is not a domain name. A Homebase identity looks like frodo.dotyou.cloud.";
+            Show(loginChallenge!, await hydra.GetLoginRequestAsync(loginChallenge!, ct), typed);
+            Problem = $"'{typed}' is not a domain name. A Homebase identity looks like frodo.dotyou.cloud.";
             return Page();
         }
 
         Response.Cookies.Append(RememberedIdentityCookie, domain, RememberedIdentityAttributes);
 
         // YouAuth [010] and [030]
-        var state = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-        var (authorizeUrl, keys) = youAuth.Begin(domain, state);
-        cookie.Write(Response, new LoginFlowState(loginChallenge, domain, state, keys));
+        var (authorizeUrl, state, privateKey) = youAuth.Begin(domain);
+        cookie.Write(Response, new LoginFlowState(loginChallenge!, domain, state, privateKey));
 
         logger.LogInformation("Sending the browser to {identity} for Hydra challenge {challenge}", domain, loginChallenge);
         return Redirect(authorizeUrl.ToString());
     }
+
+    private void Show(string loginChallenge, HydraLoginRequest request, string identity)
+    {
+        LoginChallenge = loginChallenge;
+        RelyingPartyName = request.Client?.DisplayName ?? "A site";
+        Identity = identity;
+    }
+
+    private static string Required(string? loginChallenge) =>
+        string.IsNullOrEmpty(loginChallenge) ? throw new SignInStoppedException("Missing login_challenge.") : loginChallenge;
 }

@@ -12,4 +12,8 @@
     <NuGetAudit>true</NuGetAudit>
     <NuGetAuditMode>all</NuGetAuditMode>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- odin-core's AES-GCM helper shares its name with System.Security.Cryptography.AesGcm. -->
+    <Using Include="Odin.Core.Cryptography.Crypto.AesGcm" Alias="AesGcm" />
+  </ItemGroup>
 </Project>

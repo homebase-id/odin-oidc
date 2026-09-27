@@ -1,15 +1,13 @@
 using System.Security.Cryptography;
 using Odin.Core;
-using Odin.Core.Cryptography.Crypto;
-using Odin.Oidc.Login.YouAuth;
-using AesGcm = Odin.Core.Cryptography.Crypto.AesGcm;
 
 namespace Odin.Oidc.Login.Tests;
 
 /// <summary>
-/// The wire layout of a sealed YouAuth token field, pinned by a vector odin-core's AesGcm.Encrypt
-/// produced (odin-core PR #1819): 16-byte key, 16-byte IV whose first 12 bytes are the nonce, tag
-/// appended. If this drifts, the broker cannot read what identities send.
+/// The wire layout of a token field sealed with aes-gcm, pinned by a vector odin-core's
+/// AesGcm.Encrypt produced (odin-core PR #1819): 16-byte key, 16-byte IV whose first 12 bytes are
+/// the nonce, tag appended. The app opens it with the same helper; if the helper's layout drifts
+/// from what deployed identities send, this is what says so.
 /// </summary>
 [TestFixture]
 public class YouAuthCipherTests
@@ -23,7 +21,7 @@ public class YouAuthCipherTests
     [Test]
     public void OpensWhatTheIdentitySealedWithAesGcm()
     {
-        var plain = YouAuthCipher.Open("aes-gcm", CipherText, Key.ToSensitiveByteArray(), Iv);
+        var plain = AesGcm.Decrypt(CipherText, Key.ToSensitiveByteArray(), Iv);
         Assert.That(plain.ToStringFromUtf8Bytes(), Is.EqualTo(Plain));
     }
 
@@ -32,35 +30,6 @@ public class YouAuthCipherTests
     {
         var tampered = (byte[])CipherText.Clone();
         tampered[3] ^= 0x01;
-        Assert.That(() => YouAuthCipher.Open("aes-gcm", tampered, Key.ToSensitiveByteArray(), Iv), Throws.InstanceOf<CryptographicException>());
-    }
-
-    [TestCase(null)]
-    [TestCase("")]
-    [TestCase("aes-cbc")]
-    public void AbsentOrAesCbcIsWhatClientsGotBefore(string? cipher)
-    {
-        var key = RandomNumberGenerator.GetBytes(16).ToSensitiveByteArray();
-        var plain = RandomNumberGenerator.GetBytes(33);
-        var (iv, ct) = AesCbc.Encrypt(plain, key);
-
-        Assert.That(YouAuthCipher.Open(cipher, ct, key, iv), Is.EqualTo(plain));
-    }
-
-    [Test]
-    public void AesGcmRoundTripsWithTheIdentitysOwnHelper()
-    {
-        var key = RandomNumberGenerator.GetBytes(16).ToSensitiveByteArray();
-        var plain = RandomNumberGenerator.GetBytes(33);
-        var (iv, ct) = AesGcm.Encrypt(plain, key);
-
-        Assert.That(YouAuthCipher.Open("aes-gcm", ct, key, iv), Is.EqualTo(plain));
-    }
-
-    [Test]
-    public void ACipherThisAppDoesNotKnowIsRefused()
-    {
-        Assert.That(() => YouAuthCipher.Open("rot13", CipherText, Key.ToSensitiveByteArray(), Iv),
-            Throws.ArgumentException.With.Message.Contains("rot13"));
+        Assert.That(() => AesGcm.Decrypt(tampered, Key.ToSensitiveByteArray(), Iv), Throws.InstanceOf<CryptographicException>());
     }
 }

@@ -5,10 +5,10 @@ using System.Text.Json.Serialization;
 namespace Odin.Oidc.Login.Hydra;
 
 /// <summary>
-/// The eight admin calls of Hydra's login, consent and logout flows, over a typed HttpClient whose
-/// base address is the admin API (port 4445; never exposed). Contract: GET the request by its
-/// challenge, PUT accept or reject, send the browser to the <c>redirect_to</c> that comes back.
-/// A challenge that was already answered is HTTP 410 with the same <c>redirect_to</c>.
+/// The admin calls of Hydra's login, consent and logout flows this app makes, over a typed
+/// HttpClient whose base address is the admin API (port 4445; never exposed). Contract: GET the
+/// request by its challenge, PUT accept or reject, send the browser to the <c>redirect_to</c> that
+/// comes back. Any call about a challenge already answered is HTTP 410 with a <c>redirect_to</c>.
 /// </summary>
 public sealed class HydraAdminClient(HttpClient http)
 {
@@ -18,80 +18,72 @@ public sealed class HydraAdminClient(HttpClient http)
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    private const string Requests = "admin/oauth2/auth/requests";
-
     public Task<HydraLoginRequest> GetLoginRequestAsync(string challenge, CancellationToken ct) =>
-        GetAsync<HydraLoginRequest>($"{Requests}/login?login_challenge={Uri.EscapeDataString(challenge)}", ct);
+        GetAsync<HydraLoginRequest>(Url("login", "", challenge), ct);
 
     public Task<string> AcceptLoginAsync(string challenge, HydraAcceptLogin accept, CancellationToken ct) =>
-        PutAsync($"{Requests}/login/accept?login_challenge={Uri.EscapeDataString(challenge)}", accept, ct);
+        PutAsync(Url("login", "/accept", challenge), accept, ct);
 
     public Task<string> RejectLoginAsync(string challenge, HydraReject reject, CancellationToken ct) =>
-        PutAsync($"{Requests}/login/reject?login_challenge={Uri.EscapeDataString(challenge)}", reject, ct);
+        PutAsync(Url("login", "/reject", challenge), reject, ct);
 
     public Task<HydraConsentRequest> GetConsentRequestAsync(string challenge, CancellationToken ct) =>
-        GetAsync<HydraConsentRequest>($"{Requests}/consent?consent_challenge={Uri.EscapeDataString(challenge)}", ct);
+        GetAsync<HydraConsentRequest>(Url("consent", "", challenge), ct);
 
     public Task<string> AcceptConsentAsync(string challenge, HydraAcceptConsent accept, CancellationToken ct) =>
-        PutAsync($"{Requests}/consent/accept?consent_challenge={Uri.EscapeDataString(challenge)}", accept, ct);
-
-    public Task<string> RejectConsentAsync(string challenge, HydraReject reject, CancellationToken ct) =>
-        PutAsync($"{Requests}/consent/reject?consent_challenge={Uri.EscapeDataString(challenge)}", reject, ct);
-
-    public Task<HydraLogoutRequest> GetLogoutRequestAsync(string challenge, CancellationToken ct) =>
-        GetAsync<HydraLogoutRequest>($"{Requests}/logout?logout_challenge={Uri.EscapeDataString(challenge)}", ct);
+        PutAsync(Url("consent", "/accept", challenge), accept, ct);
 
     public Task<string> AcceptLogoutAsync(string challenge, CancellationToken ct) =>
-        PutAsync($"{Requests}/logout/accept?logout_challenge={Uri.EscapeDataString(challenge)}", new { }, ct);
-
-    public Task<string> RejectLogoutAsync(string challenge, HydraReject reject, CancellationToken ct) =>
-        PutAsync($"{Requests}/logout/reject?logout_challenge={Uri.EscapeDataString(challenge)}", reject, ct);
+        PutAsync(Url("logout", "/accept", challenge), new { }, ct);
 
     //
 
-    private async Task<T> GetAsync<T>(string pathAndQuery, CancellationToken ct)
+    private static string Url(string flow, string action, string challenge) =>
+        $"admin/oauth2/auth/requests/{flow}{action}?{flow}_challenge={Uri.EscapeDataString(challenge)}";
+
+    private async Task<T> GetAsync<T>(string url, CancellationToken ct)
     {
-        using var response = await http.GetAsync(pathAndQuery, ct);
-        var body = await response.Content.ReadAsStringAsync(ct);
-        if (!response.IsSuccessStatusCode)
-        {
-            throw Failure(response, pathAndQuery, body);
-        }
-        return JsonSerializer.Deserialize<T>(body, Json) ?? throw new HydraException($"Hydra answered GET {pathAndQuery} with an empty body");
+        using var response = await http.GetAsync(url, ct);
+        return await ReadAsync<T>(response, url, ct);
     }
 
-    /// <summary>Accept or reject. Returns where to send the browser, also when the challenge was already answered (410).</summary>
-    private async Task<string> PutAsync<T>(string pathAndQuery, T payload, CancellationToken ct)
+    /// <summary>Accept or reject; returns where to send the browser.</summary>
+    private async Task<string> PutAsync<T>(string url, T payload, CancellationToken ct)
     {
-        using var response = await http.PutAsJsonAsync(pathAndQuery, payload, Json, ct);
+        using var response = await http.PutAsJsonAsync(url, payload, Json, ct);
+        return (await ReadAsync<HydraRedirect>(response, url, ct)).RedirectTo;
+    }
+
+    private static async Task<T> ReadAsync<T>(HttpResponseMessage response, string url, CancellationToken ct)
+    {
         var body = await response.Content.ReadAsStringAsync(ct);
-        if (response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.Gone)
+        if (response.StatusCode == HttpStatusCode.Gone)
         {
-            var redirect = JsonSerializer.Deserialize<HydraRedirect>(body, Json)?.RedirectTo;
+            var redirect = Deserialize<HydraRedirect>(body)?.RedirectTo;
             if (!string.IsNullOrEmpty(redirect))
             {
-                return redirect;
+                throw new HydraAlreadyAnsweredException(redirect);
             }
         }
-        throw Failure(response, pathAndQuery, body);
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = Deserialize<HydraError>(body);
+            var detail = error?.Error != null ? $"{error.Error}: {error.ErrorDescription}" : body;
+            throw new HydraException($"Hydra answered {response.RequestMessage?.Method} {url} with {(int)response.StatusCode}: {detail}");
+        }
+        return Deserialize<T>(body) ?? throw new HydraException($"Hydra answered {response.RequestMessage?.Method} {url} with an empty body");
     }
 
-    private static HydraException Failure(HttpResponseMessage response, string pathAndQuery, string body)
+    private static T? Deserialize<T>(string body)
     {
-        var detail = body;
         try
         {
-            var error = JsonSerializer.Deserialize<HydraError>(body, Json);
-            if (error?.Error != null)
-            {
-                detail = $"{error.Error}: {error.ErrorDescription}";
-            }
+            return JsonSerializer.Deserialize<T>(body, Json);
         }
         catch (JsonException)
         {
-            // not JSON; the raw body is the detail
+            return default;
         }
-        return new HydraException($"Hydra answered {response.RequestMessage?.Method} {pathAndQuery} with {(int)response.StatusCode}: {detail}");
     }
 
     private sealed class HydraError

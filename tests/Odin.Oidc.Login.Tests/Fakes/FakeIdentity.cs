@@ -4,7 +4,6 @@ using System.Text.Json;
 using Microsoft.AspNetCore.WebUtilities;
 using Odin.Core;
 using Odin.Core.Cryptography.Data;
-using AesGcm = Odin.Core.Cryptography.Crypto.AesGcm;
 
 namespace Odin.Oidc.Login.Tests.Fakes;
 

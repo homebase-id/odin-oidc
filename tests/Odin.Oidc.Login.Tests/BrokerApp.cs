@@ -29,13 +29,10 @@ public sealed class BrokerApp : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         var keys = Directory.CreateTempSubdirectory("odin-oidc-keys").FullName;
-        builder.UseSetting("Broker:PublicHost", PublicHost);
-        builder.UseSetting("Broker:PublicPort", "");
+        builder.UseSetting("Broker:PublicOrigin", $"https://{PublicHost}");
         builder.UseSetting("Broker:ClientName", "Homebase Sign-in");
         builder.UseSetting("Broker:HydraAdminUrl", "http://hydra-admin:4445/");
         builder.UseSetting("Broker:KeyRingPath", keys);
-        builder.UseSetting("Broker:CertificatePath", "");
-        builder.UseSetting("Broker:KeyPath", "");
 
         builder.ConfigureTestServices(services =>
         {

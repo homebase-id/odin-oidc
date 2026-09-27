@@ -1,6 +1,5 @@
 using System.Net;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 
 namespace Odin.Oidc.Login.Tests.Fakes;
 
@@ -17,6 +16,8 @@ public sealed class FakeHydraAdmin
     public string? LoginHint { get; set; }
     public List<string> RequestedScope { get; set; } = ["openid", "offline"];
     public bool ConsentSkip { get; set; }
+    /// <summary>Answer every login call with 410: the challenge was already answered.</summary>
+    public bool LoginGone { get; set; }
 
     public List<(string challenge, string body)> LoginAccepts { get; } = [];
     public List<(string challenge, string body)> LoginRejects { get; } = [];
@@ -39,6 +40,11 @@ public sealed class FakeHydraAdmin
             : query.TryGetValue("logout_challenge", out var xc) ? xc.ToString() : "";
 
         HttpResponseMessage Redirect() => RecordingHandler.Json(HttpStatusCode.OK, JsonSerializer.Serialize(new { redirect_to = RedirectTo }));
+
+        if (LoginGone && path.StartsWith("/admin/oauth2/auth/requests/login"))
+        {
+            return Task.FromResult(RecordingHandler.Json(HttpStatusCode.Gone, JsonSerializer.Serialize(new { error = "already_handled", redirect_to = RedirectTo })));
+        }
 
         switch (request.Method.Method, path)
         {
@@ -77,6 +83,6 @@ public sealed class FakeHydraAdmin
         }
     }
 
-    public static string Field(string json, string name) =>
-        Regex.Match(json, $"\"{name}\"\\s*:\\s*\"([^\"]*)\"").Groups[1].Value;
+    public static string? Field(string json, string name) =>
+        JsonDocument.Parse(json).RootElement.TryGetProperty(name, out var value) ? value.GetString() : null;
 }

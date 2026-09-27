@@ -23,7 +23,6 @@ public sealed class LoginFlowCookie(IDataProtectionProvider dataProtection, IOpt
         Secure = true,
         SameSite = SameSiteMode.Lax,
         Path = "/",
-        IsEssential = true,
     };
 
     public void Write(HttpResponse response, LoginFlowState state)

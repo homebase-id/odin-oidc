@@ -8,6 +8,9 @@ public sealed class HydraClient
     public string? ClientId { get; set; }
     public string? ClientName { get; set; }
     public bool SkipConsent { get; set; }
+
+    /// <summary>What the pages call the relying party: its name, else its id, else a generic word.</summary>
+    public string DisplayName => ClientName is { Length: > 0 } ? ClientName : ClientId is { Length: > 0 } ? ClientId : "A site";
 }
 
 public sealed class HydraOidcContext
@@ -17,47 +20,31 @@ public sealed class HydraOidcContext
 
 public sealed class HydraLoginRequest
 {
-    public string Challenge { get; set; } = "";
     /// <summary>Hydra already knows the user (a remembered session): accept at once with <see cref="Subject"/>, no UI.</summary>
     public bool Skip { get; set; }
     public string? Subject { get; set; }
     public HydraClient? Client { get; set; }
-    public List<string>? RequestedScope { get; set; }
-    public List<string>? RequestedAccessTokenAudience { get; set; }
     public HydraOidcContext? OidcContext { get; set; }
-    public string? RequestUrl { get; set; }
 }
 
 public sealed class HydraConsentRequest
 {
-    public string Challenge { get; set; } = "";
+    /// <summary>The user already consented to this client and scope (remembered): accept at once, no UI.</summary>
     public bool Skip { get; set; }
-    public string? Subject { get; set; }
     public HydraClient? Client { get; set; }
     public List<string>? RequestedScope { get; set; }
     public List<string>? RequestedAccessTokenAudience { get; set; }
-}
-
-public sealed class HydraLogoutRequest
-{
-    public string Challenge { get; set; } = "";
-    public string? Subject { get; set; }
-    public string? Sid { get; set; }
-    public bool RpInitiated { get; set; }
 }
 
 public sealed class HydraAcceptLogin
 {
     public string Subject { get; set; } = "";
     public bool Remember { get; set; }
-    public long? RememberFor { get; set; }
-    public Dictionary<string, object>? Context { get; set; }
 }
 
 public sealed class HydraConsentSession
 {
     public Dictionary<string, object>? IdToken { get; set; }
-    public Dictionary<string, object>? AccessToken { get; set; }
 }
 
 public sealed class HydraAcceptConsent
@@ -65,7 +52,6 @@ public sealed class HydraAcceptConsent
     public List<string> GrantScope { get; set; } = [];
     public List<string>? GrantAccessTokenAudience { get; set; }
     public bool Remember { get; set; }
-    public long? RememberFor { get; set; }
     public HydraConsentSession? Session { get; set; }
 }
 
@@ -73,7 +59,6 @@ public sealed class HydraReject
 {
     public string Error { get; set; } = "";
     public string? ErrorDescription { get; set; }
-    public int? StatusCode { get; set; }
 }
 
 /// <summary>Every accept and reject answers with where to send the browser.</summary>

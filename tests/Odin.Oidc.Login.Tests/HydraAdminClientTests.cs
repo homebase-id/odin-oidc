@@ -26,7 +26,6 @@ public class HydraAdminClientTests
         Assert.That(handler.Requests.Single().request.RequestUri!.PathAndQuery, Is.EqualTo("/admin/oauth2/auth/requests/login?login_challenge=abc"));
         Assert.That(request.Skip, Is.True);
         Assert.That(request.Subject, Is.EqualTo("frodo.dotyou.cloud"));
-        Assert.That(request.RequestedScope, Is.EqualTo(new[] { "openid" }));
         Assert.That(request.Client!.SkipConsent, Is.True);
         Assert.That(request.OidcContext!.LoginHint, Is.EqualTo("frodo.dotyou.cloud"));
     }
@@ -75,13 +74,16 @@ public class HydraAdminClientTests
     }
 
     [Test]
-    public async Task AChallengeAlreadyAnsweredStillSaysWhereToGo()
+    public void AChallengeAlreadyAnsweredSaysWhereToGoWhateverTheCall()
     {
         var (client, _) = Client((_, _) => RecordingHandler.Json(HttpStatusCode.Gone, """{"error":"already_handled","redirect_to":"http://hydra/oauth2/auth?again=1"}"""));
 
-        var redirect = await client.AcceptLoginAsync("abc", new HydraAcceptLogin { Subject = "frodo.dotyou.cloud" }, CancellationToken.None);
-
-        Assert.That(redirect, Is.EqualTo("http://hydra/oauth2/auth?again=1"), "HTTP 410: the browser went back; sending it on again is harmless");
+        Assert.That(() => client.GetLoginRequestAsync("abc", CancellationToken.None),
+            Throws.InstanceOf<HydraAlreadyAnsweredException>().With.Property("RedirectTo").EqualTo("http://hydra/oauth2/auth?again=1"),
+            "HTTP 410 on a GET: the browser went back to a page it had left");
+        Assert.That(() => client.AcceptLoginAsync("abc", new HydraAcceptLogin { Subject = "frodo.dotyou.cloud" }, CancellationToken.None),
+            Throws.InstanceOf<HydraAlreadyAnsweredException>().With.Property("RedirectTo").EqualTo("http://hydra/oauth2/auth?again=1"),
+            "and on a PUT; the Error page sends the browser on");
     }
 
     [Test]

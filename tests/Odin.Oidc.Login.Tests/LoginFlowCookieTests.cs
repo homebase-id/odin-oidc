@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using Odin.Oidc.Login.Flow;
 using Odin.Oidc.Login.Options;
-using Odin.Oidc.Login.YouAuth;
 
 namespace Odin.Oidc.Login.Tests;
 
@@ -11,7 +10,7 @@ namespace Odin.Oidc.Login.Tests;
 [TestFixture]
 public class LoginFlowCookieTests
 {
-    private static readonly LoginFlowState State = new("challenge-1", "frodo.dotyou.cloud", "state-xyz", new YouAuthFlowKeys("cHdk", "ZGVy"));
+    private static readonly LoginFlowState State = new("challenge-1", "frodo.dotyou.cloud", "state-xyz", "ZGVy");
 
     private static LoginFlowCookie Cookie(TimeSpan? lifetime = null)
     {

@@ -44,8 +44,8 @@ ASPNETCORE_ENVIRONMENT=Development dotnet run --project src/Odin.Oidc.Login
 curl https://collab.dotyou.cloud:8443/.well-known/youauth-client.json
 ```
 
-`appsettings.Development.json` sets `Broker:PublicHost` to `collab.dotyou.cloud` and the port to
-8443; `LOGIN_APP_URL` in `docker/.env` must match. With odin-core's dev identity host and the
+`appsettings.Development.json` sets `Broker:PublicOrigin` to `https://collab.dotyou.cloud:8443` and
+Kestrel's endpoint to that port and certificate; `LOGIN_APP_URL` in `docker/.env` must match. With odin-core's dev identity host and the
 odin-js owner app running as its README describes, the whole flow runs locally: open
 http://127.0.0.1:5555, click the authorize link, type `frodo.dotyou.cloud`, sign in and approve at
 frodo, and the demo relying party shows an id_token whose `sub` is `frodo.dotyou.cloud`.
@@ -53,19 +53,9 @@ frodo, and the demo relying party shows an id_token whose `sub` is `frodo.dotyou
 Until `oidc.dotyou.cloud` has a certificate on the dev certbot host, the owner's consent page names
 the broker as collab, and collab itself cannot sign in through it.
 
-## Tests
+## Tests, image, CI
 
-```bash
-dotnet build odin-oidc.sln --warnaserror
-dotnet test odin-oidc.sln
-```
-
-Hydra and the identity are faked behind the app's two HttpClients; the identity fake runs the
-identity's half of the exchange with odin-core's own primitives, and the cipher layout is pinned
-by a vector odin-core's helper produced.
-
-## Image and CI
-
-`Dockerfile` clones odin-core at the commit in `odin-core.ref` and publishes the app for a
-TLS-terminating proxy on port 8080; `scripts/bump-odin-core.sh` moves the pin. CI checks out both
-repos side by side, builds with warnings as errors, tests, and builds the image.
+`dotnet build odin-oidc.sln --warnaserror` and `dotnet test odin-oidc.sln`; the fakes are described
+in `tests/Odin.Oidc.Login.Tests/BrokerApp.cs`. The `Dockerfile` header says how the image is built
+against the pinned odin-core commit (`scripts/bump-odin-core.sh` moves the pin); `.github/workflows/ci.yml`
+does the same on every push.
