@@ -3,5 +3,20 @@
 @{
     ViewData["Title"] = "Approve";
 }
-@* Not rendered yet: every consent is accepted at once (see ConsentModel). The page exists so the
-   relying-party-naming consent screen slots in as a view and an OnPost. *@
+<h1>Let <strong>@Model.RelyingPartyName</strong> know who you are?</h1>
+<p>You are signed in as <strong>@Model.Subject</strong>. If you allow it, this site learns:</p>
+<ul class="grants">
+    @foreach (var grant in Model.Grants)
+    {
+        <li>@grant</li>
+    }
+</ul>
+<form method="post">
+    <input type="hidden" name="consent_challenge" value="@Model.ConsentChallenge">
+    <label class="check"><input type="checkbox" name="remember" value="true" checked> Remember this for a month</label>
+    <div class="actions">
+        <button type="submit" name="allow" value="yes">Allow</button>
+        <button type="submit" name="allow" value="no" class="secondary">Deny</button>
+    </div>
+</form>
+<p class="muted">Your identity itself asked you once already, for "Homebase Sign-in"; this is about this site in particular.</p>

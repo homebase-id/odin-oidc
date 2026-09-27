@@ -33,8 +33,22 @@ public sealed class HydraAdminClient(HttpClient http)
     public Task<string> AcceptConsentAsync(string challenge, HydraAcceptConsent accept, CancellationToken ct) =>
         PutAsync(Url("consent", "/accept", challenge), accept, ct);
 
+    public Task<string> RejectConsentAsync(string challenge, HydraReject reject, CancellationToken ct) =>
+        PutAsync(Url("consent", "/reject", challenge), reject, ct);
+
+    public Task<HydraLogoutRequest> GetLogoutRequestAsync(string challenge, CancellationToken ct) =>
+        GetAsync<HydraLogoutRequest>(Url("logout", "", challenge), ct);
+
     public Task<string> AcceptLogoutAsync(string challenge, CancellationToken ct) =>
         PutAsync(Url("logout", "/accept", challenge), new { }, ct);
+
+    /// <summary>The one answer with nowhere to send the browser: the session stays, and the page says so.</summary>
+    public async Task RejectLogoutAsync(string challenge, CancellationToken ct)
+    {
+        var url = Url("logout", "/reject", challenge);
+        using var response = await http.PutAsJsonAsync(url, new { }, Json, ct);
+        await ReadAsync<object>(response, url, ct, allowEmpty: true);
+    }
 
     //
 
@@ -44,17 +58,17 @@ public sealed class HydraAdminClient(HttpClient http)
     private async Task<T> GetAsync<T>(string url, CancellationToken ct)
     {
         using var response = await http.GetAsync(url, ct);
-        return await ReadAsync<T>(response, url, ct);
+        return (await ReadAsync<T>(response, url, ct))!;
     }
 
     /// <summary>Accept or reject; returns where to send the browser.</summary>
     private async Task<string> PutAsync<T>(string url, T payload, CancellationToken ct)
     {
         using var response = await http.PutAsJsonAsync(url, payload, Json, ct);
-        return (await ReadAsync<HydraRedirect>(response, url, ct)).RedirectTo;
+        return (await ReadAsync<HydraRedirect>(response, url, ct))!.RedirectTo;
     }
 
-    private static async Task<T> ReadAsync<T>(HttpResponseMessage response, string url, CancellationToken ct)
+    private static async Task<T?> ReadAsync<T>(HttpResponseMessage response, string url, CancellationToken ct, bool allowEmpty = false)
     {
         var body = await response.Content.ReadAsStringAsync(ct);
         if (response.StatusCode == HttpStatusCode.Gone)
@@ -70,6 +84,10 @@ public sealed class HydraAdminClient(HttpClient http)
             var error = Deserialize<HydraError>(body);
             var detail = error?.Error != null ? $"{error.Error}: {error.ErrorDescription}" : body;
             throw new HydraException($"Hydra answered {response.RequestMessage?.Method} {url} with {(int)response.StatusCode}: {detail}");
+        }
+        if (allowEmpty && string.IsNullOrWhiteSpace(body))
+        {
+            return default;
         }
         return Deserialize<T>(body) ?? throw new HydraException($"Hydra answered {response.RequestMessage?.Method} {url} with an empty body");
     }

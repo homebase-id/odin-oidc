@@ -48,7 +48,11 @@ public sealed class LoginModel(HydraAdminClient hydra, YouAuthClient youAuth, Lo
         return Page();
     }
 
-    public async Task<IActionResult> OnPostAsync([FromForm(Name = "login_challenge")] string? loginChallenge, [FromForm(Name = "identity")] string? identity, CancellationToken ct)
+    public async Task<IActionResult> OnPostAsync(
+        [FromForm(Name = "login_challenge")] string? loginChallenge,
+        [FromForm(Name = "identity")] string? identity,
+        [FromForm(Name = "remember")] bool remember,
+        CancellationToken ct)
     {
         Required(loginChallenge);
         var typed = identity?.Trim() ?? "";
@@ -64,7 +68,7 @@ public sealed class LoginModel(HydraAdminClient hydra, YouAuthClient youAuth, Lo
 
         // YouAuth [010] and [030]
         var (authorizeUrl, state, privateKey) = youAuth.Begin(domain);
-        cookie.Write(Response, new LoginFlowState(loginChallenge!, domain, state, privateKey));
+        cookie.Write(Response, new LoginFlowState(loginChallenge!, domain, state, privateKey, remember));
 
         logger.LogInformation("Sending the browser to {identity} for Hydra challenge {challenge}", domain, loginChallenge);
         return Redirect(authorizeUrl.ToString());

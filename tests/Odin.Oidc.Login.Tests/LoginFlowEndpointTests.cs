@@ -202,34 +202,6 @@ public class LoginFlowEndpointTests
     }
 
     [Test]
-    public async Task ConsentGrantsWhatWasRequested()
-    {
-        using var app = new BrokerApp();
-        app.Hydra.RequestedScope = ["openid", "offline"];
-        using var browser = app.CreateClient();
-
-        var response = await browser.GetAsync("/consent?consent_challenge=co1");
-
-        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Redirect));
-        Assert.That(response.Headers.Location!.ToString(), Is.EqualTo(FakeHydraAdmin.RedirectTo));
-        var (challenge, body) = app.Hydra.ConsentAccepts.Single();
-        Assert.That(challenge, Is.EqualTo("co1"));
-        Assert.That(body, Does.Contain("\"grant_scope\":[\"openid\",\"offline\"]"), body);
-    }
-
-    [Test]
-    public async Task LogoutIsAccepted()
-    {
-        using var app = new BrokerApp();
-        using var browser = app.CreateClient();
-
-        var response = await browser.GetAsync("/logout?logout_challenge=lo1");
-
-        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Redirect));
-        Assert.That(app.Hydra.LogoutAccepts.Single().challenge, Is.EqualTo("lo1"));
-    }
-
-    [Test]
     public async Task ThisAppPublishesItsOwnYouAuthClientDocument()
     {
         using var app = new BrokerApp();

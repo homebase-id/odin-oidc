@@ -1,0 +1,22 @@
+@page
+@model Odin.Oidc.Login.Pages.LogoutModel
+@{
+    ViewData["Title"] = "Sign out";
+}
+@if (Model.Declined)
+{
+    <h1>You are still signed in</h1>
+    <p>Nothing changed. You can close this page.</p>
+}
+else
+{
+    <h1>Sign out of Homebase Sign-in?</h1>
+    <p>This browser is signed in as <strong>@Model.Subject</strong>. Signing out here means the next site will ask you to sign in at your identity again.</p>
+    <form method="post">
+        <input type="hidden" name="logout_challenge" value="@Model.LogoutChallenge">
+        <div class="actions">
+            <button type="submit" name="confirm" value="yes">Sign out</button>
+            <button type="submit" name="confirm" value="no" class="secondary">Stay signed in</button>
+        </div>
+    </form>
+}
