@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.WebUtilities;
 using Odin.Oidc.Login.Flow;
+using Odin.Oidc.Login.Pages;
 using Odin.Oidc.Login.Tests.Fakes;
 
 namespace Odin.Oidc.Login.Tests;
@@ -63,9 +64,37 @@ public class LoginFlowEndpointTests
         Assert.That(query["client_id"].ToString(), Is.EqualTo(app.PublicHost));
         Assert.That(query["cipher"].ToString(), Is.EqualTo("aes-gcm"));
         Assert.That(query["redirect_uri"].ToString(), Is.EqualTo($"https://{app.PublicHost}/youauth/callback"));
-        var setCookie = response.Headers.GetValues("Set-Cookie").Single();
-        Assert.That(setCookie, Does.StartWith($"{LoginFlowCookie.Name}="));
+        var setCookie = response.Headers.GetValues("Set-Cookie").Single(c => c.StartsWith($"{LoginFlowCookie.Name}="));
         Assert.That(setCookie.Length, Is.LessThan(4096), "a browser drops a cookie over 4096 bytes without a word, and the callback then finds no flow");
+    }
+
+    [Test]
+    public async Task TheIdentityTypedLastTimeIsRememberedAndPrefilled()
+    {
+        using var app = new BrokerApp();
+        using var browser = app.CreateClient();
+        var response = await PostIdentityAsync(browser, "ch1", "Frodo.DotYou.Cloud");
+
+        var remembered = response.Headers.GetValues("Set-Cookie").Single(c => c.StartsWith($"{LoginModel.RememberedIdentityCookie}="));
+        Assert.That(remembered, Does.Contain("frodo.dotyou.cloud").And.Contain("max-age=").IgnoreCase.And.Contain("secure").IgnoreCase.And.Contain("samesite=lax").IgnoreCase,
+            "a year-long, non-sensitive cookie with the domain alone; it is a convenience, not a session");
+
+        var page = await browser.GetAsync("/login?login_challenge=ch2");
+        Assert.That(await page.Content.ReadAsStringAsync(), Does.Contain("value=\"frodo.dotyou.cloud\""), "next time the owner only clicks Continue");
+    }
+
+    [Test]
+    public async Task TheRelyingPartysHintBeatsTheRememberedIdentity()
+    {
+        using var app = new BrokerApp();
+        using var browser = app.CreateClient();
+        await PostIdentityAsync(browser, "ch1", Frodo);
+        app.Hydra.LoginHint = "sam.dotyou.cloud";
+
+        var page = await browser.GetAsync("/login?login_challenge=ch2");
+
+        Assert.That(await page.Content.ReadAsStringAsync(), Does.Contain("value=\"sam.dotyou.cloud\"").And.Not.Contain($"value=\"{Frodo}\""),
+            "the relying party knows who it expects; the cookie is only a default");
     }
 
     [Test]

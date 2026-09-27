@@ -15,6 +15,22 @@ namespace Odin.Oidc.Login.Pages;
 /// </summary>
 public sealed class LoginModel(HydraAdminClient hydra, YouAuthClient youAuth, LoginFlowCookie cookie, ILogger<LoginModel> logger) : PageModel
 {
+    /// <summary>
+    /// The domain typed last time, so the owner only clicks Continue. A convenience, not a session:
+    /// it grants nothing, and the relying party's login hint wins over it.
+    /// </summary>
+    public const string RememberedIdentityCookie = "odin_oidc_identity";
+
+    private static readonly CookieOptions RememberedIdentityAttributes = new()
+    {
+        HttpOnly = true,
+        Secure = true,
+        SameSite = SameSiteMode.Lax,
+        Path = "/login",
+        MaxAge = TimeSpan.FromDays(365),
+        IsEssential = true,
+    };
+
     public string LoginChallenge { get; private set; } = "";
     public string RelyingPartyName { get; private set; } = "A site";
     public string Identity { get; private set; } = "";
@@ -37,7 +53,8 @@ public sealed class LoginModel(HydraAdminClient hydra, YouAuthClient youAuth, Lo
 
         LoginChallenge = loginChallenge;
         RelyingPartyName = request.Client?.ClientName is { Length: > 0 } name ? name : request.Client?.ClientId ?? RelyingPartyName;
-        Identity = request.OidcContext?.LoginHint ?? "";
+        Identity = request.OidcContext?.LoginHint is { Length: > 0 } hint ? hint
+            : Request.Cookies.TryGetValue(RememberedIdentityCookie, out var remembered) ? remembered : "";
         return Page();
     }
 
@@ -59,6 +76,8 @@ public sealed class LoginModel(HydraAdminClient hydra, YouAuthClient youAuth, Lo
             Problem = $"'{Identity}' is not a domain name. A Homebase identity looks like frodo.dotyou.cloud.";
             return Page();
         }
+
+        Response.Cookies.Append(RememberedIdentityCookie, domain, RememberedIdentityAttributes);
 
         // YouAuth [010] and [030]
         var state = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
