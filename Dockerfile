@@ -2,7 +2,9 @@
 # at the commit in odin-core.ref, because the app references two of its projects (see
 # Directory.Build.props). Build:
 #   docker build --build-arg ODIN_CORE_SHA=$(cat odin-core.ref) -t odin-oidc-login .
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+# Plain `docker build` leaves TARGETARCH empty and publishes for the host; `docker buildx build
+# --platform linux/arm64` sets it and cross-compiles.
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 ARG TARGETARCH
 ARG ODIN_CORE_SHA
 ARG ODIN_CORE_REPO=https://github.com/homebase-id/odin-core.git
@@ -15,7 +17,7 @@ RUN git clone --filter=blob:none --no-checkout "$ODIN_CORE_REPO" odin-core \
 COPY . odin-oidc
 WORKDIR /build/odin-oidc
 RUN dotnet publish src/Odin.Oidc.Login/Odin.Oidc.Login.csproj \
-      --configuration Release --warnaserror -a "$TARGETARCH" -o /out
+      --configuration Release --warnaserror ${TARGETARCH:+-a $TARGETARCH} -o /out
 
 FROM mcr.microsoft.com/dotnet/aspnet:9.0
 WORKDIR /app

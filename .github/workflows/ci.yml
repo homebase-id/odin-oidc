@@ -28,7 +28,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          global-json-file: odin-oidc/global.json
+          dotnet-version: 9.0.x
 
       - name: Build (warnings are errors)
         run: dotnet build odin-oidc/odin-oidc.sln --configuration Release --warnaserror
