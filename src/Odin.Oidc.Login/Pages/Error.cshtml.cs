@@ -8,9 +8,10 @@ using Odin.Oidc.Login.Hydra;
 namespace Odin.Oidc.Login.Pages;
 
 /// <summary>
-/// The one place a failure is shown. The exception handler re-executes here: a
-/// <see cref="SignInStoppedException"/> is a 400 with its words; a challenge Hydra already answered
-/// sends the browser on; anything else is a 500 with a reference to find in the log.
+/// The one place a failure is shown. <see cref="SignInOutcomeMiddleware"/> or the exception handler
+/// re-executes here: a <see cref="SignInStoppedException"/> is a 400 with its words; a challenge
+/// Hydra already answered sends the browser on; anything else is a 500 with a reference to find in
+/// the log.
 /// </summary>
 public sealed class ErrorModel : PageModel
 {
@@ -19,7 +20,8 @@ public sealed class ErrorModel : PageModel
 
     public IActionResult OnGet()
     {
-        var exception = HttpContext.Features.Get<IExceptionHandlerFeature>()?.Error;
+        var exception = HttpContext.Items[SignInOutcomeMiddleware.ItemKey] as Exception
+                        ?? HttpContext.Features.Get<IExceptionHandlerFeature>()?.Error;
         switch (exception)
         {
             case HydraAlreadyAnsweredException gone:
