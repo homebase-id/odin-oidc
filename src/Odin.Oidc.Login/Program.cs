@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Diagnostics;
 using Odin.Oidc.Login.Endpoints;
 using Odin.Oidc.Login.Flow;
 using Odin.Oidc.Login.Hydra;
@@ -25,7 +26,13 @@ builder.Services.AddDataProtection()
 // Where the app listens, and its certificate in development, are Kestrel's own configuration
 // (appsettings.Development.json, ASPNETCORE_URLS in the image).
 var app = builder.Build();
-app.UseExceptionHandler("/Error");
+app.UseExceptionHandler(new ExceptionHandlerOptions
+{
+    ExceptionHandlingPath = "/Error",
+    // A stopped sign-in and an already-answered challenge are outcomes the Error page renders, not
+    // failures for the log.
+    SuppressDiagnosticsCallback = context => context.Exception is SignInStoppedException or HydraAlreadyAnsweredException,
+});
 app.MapRazorPages();
 app.MapBrokerEndpoints();
 app.Run();
