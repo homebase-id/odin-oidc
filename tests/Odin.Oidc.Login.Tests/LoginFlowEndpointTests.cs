@@ -63,7 +63,9 @@ public class LoginFlowEndpointTests
         Assert.That(query["client_id"].ToString(), Is.EqualTo(app.PublicHost));
         Assert.That(query["cipher"].ToString(), Is.EqualTo("aes-gcm"));
         Assert.That(query["redirect_uri"].ToString(), Is.EqualTo($"https://{app.PublicHost}/youauth/callback"));
-        Assert.That(response.Headers.GetValues("Set-Cookie").Single(), Does.StartWith($"{LoginFlowCookie.Name}="));
+        var setCookie = response.Headers.GetValues("Set-Cookie").Single();
+        Assert.That(setCookie, Does.StartWith($"{LoginFlowCookie.Name}="));
+        Assert.That(setCookie.Length, Is.LessThan(4096), "a browser drops a cookie over 4096 bytes without a word, and the callback then finds no flow");
     }
 
     [Test]

@@ -1,6 +1,5 @@
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
-using System.Text.Json;
 using Microsoft.Extensions.Options;
 using Odin.Core;
 using Odin.Core.Cryptography.Data;
@@ -8,8 +7,13 @@ using Odin.Oidc.Login.Options;
 
 namespace Odin.Oidc.Login.YouAuth;
 
-/// <summary>The relying party's half of one login: what must survive from [030] to [090]. Lives in the flow cookie.</summary>
-public sealed record YouAuthFlowKeys(string PasswordBase64, string KeyPairJson);
+/// <summary>
+/// The relying party's half of one login: what must survive from [030] to [090]. Lives in the flow
+/// cookie, so it is the private key's DER form and the password it is held under, not the whole
+/// EccFullKeyData: serialized, that is several kilobytes, and a browser drops a cookie over 4096
+/// bytes without a word. ECDH needs only the private half.
+/// </summary>
+public sealed record YouAuthFlowKeys(string PasswordBase64, string PrivateKeyDerBase64);
 
 /// <summary>
 /// This app as a YouAuth domain client: starts the flow at the identity, exchanges the callback for
@@ -28,7 +32,8 @@ public sealed class YouAuthClient(IHttpClientFactory httpClientFactory, IOptions
     {
         var broker = options.Value;
         var password = RandomNumberGenerator.GetBytes(16);
-        var keyPair = new EccFullKeyData(new SensitiveByteArray(password), EccKeySize.P384, hours: 1);
+        var passwordKey = new SensitiveByteArray(password);
+        var keyPair = new EccFullKeyData(passwordKey, EccKeySize.P384, hours: 1);
 
         var request = new YouAuthAuthorizeRequest
         {
@@ -41,7 +46,7 @@ public sealed class YouAuthClient(IHttpClientFactory httpClientFactory, IOptions
         };
 
         var url = new Uri($"https://{identity}{YouAuthWire.AuthorizePath}{request.ToQueryString()}");
-        var keys = new YouAuthFlowKeys(Convert.ToBase64String(password), JsonSerializer.Serialize(keyPair));
+        var keys = new YouAuthFlowKeys(Convert.ToBase64String(password), keyPair.privateDerBase64(passwordKey));
         return (url, keys);
     }
 
@@ -50,8 +55,7 @@ public sealed class YouAuthClient(IHttpClientFactory httpClientFactory, IOptions
     {
         // [090] The same secret the identity derived at [070]: ECDH over P-384, HKDF with the salt.
         var password = new SensitiveByteArray(Convert.FromBase64String(keys.PasswordBase64));
-        var keyPair = JsonSerializer.Deserialize<EccFullKeyData>(keys.KeyPairJson)
-                      ?? throw new YouAuthException("The flow's key pair did not survive the round trip");
+        var keyPair = new EccFullKeyData(password, Convert.FromBase64String(keys.PrivateKeyDerBase64));
         var identityPublicKey = EccPublicKeyData.FromJwkBase64UrlPublicKey(identityPublicKeyJwk);
         var exchangeSecret = keyPair.GetEcdhSharedSecret(password, identityPublicKey, Convert.FromBase64String(saltBase64));
         var digest = Convert.ToBase64String(SHA256.HashData(exchangeSecret.GetKey()));

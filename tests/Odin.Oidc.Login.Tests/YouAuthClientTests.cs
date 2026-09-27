@@ -41,7 +41,19 @@ public class YouAuthClientTests
         Assert.That(query["state"].ToString(), Is.EqualTo("state-1"));
         Assert.That(query["cipher"].ToString(), Is.EqualTo("aes-gcm"));
         Assert.That(query["public_key"].ToString(), Is.Not.Empty);
-        Assert.That(keys.KeyPairJson, Is.Not.Empty, "the private half must survive to [090]");
+        Assert.That(keys.PrivateKeyDerBase64, Is.Not.Empty, "the private half must survive to [090]");
+    }
+
+    [Test]
+    public void YouAuth010_TheKeysAreSmallEnoughToTravelInACookie()
+    {
+        var (_, keys) = Client(new FakeIdentity(Frodo)).Begin(Frodo, "s");
+
+        // The DER form is ~1200 base64 chars because BouncyCastle writes the curve parameters out in
+        // full rather than naming P-384; a private JWK would be ~240. Either fits; the whole
+        // EccFullKeyData serialized (~2000) did not, once encrypted and joined by the rest of the state.
+        var size = keys.PasswordBase64.Length + keys.PrivateKeyDerBase64.Length;
+        Assert.That(size, Is.LessThan(1500), $"the flow cookie must stay well under a browser's 4096-byte limit after encryption; keys alone are {size} bytes");
     }
 
     [Test]
