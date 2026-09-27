@@ -108,6 +108,20 @@ public class LoginFlowEndpointTests
     }
 
     [Test]
+    public async Task KeepMeSignedInIsRememberedByHydraForAMonth()
+    {
+        using var app = new BrokerApp();
+        using var browser = app.CreateClient();
+        var authorize = (await PostIdentityAsync(browser, "ch1", Frodo, remember: true)).Headers.Location!;
+        var callback = app.Identity.Authorize(authorize);
+
+        await browser.GetAsync(QueryHelpers.AddQueryString("/youauth/callback", callback!));
+
+        var (_, body) = app.Hydra.LoginAccepts.Single();
+        Assert.That(body, Does.Contain("\"remember\":true").And.Contain("\"remember_for\":2592000"), "Hydra skips the login for this browser's next relying party: " + body);
+    }
+
+    [Test]
     public async Task YouAuth150_TheCallbackProvesTheIdentityReleasesTheTokenAndAcceptsTheLogin()
     {
         using var app = new BrokerApp();
@@ -122,6 +136,7 @@ public class LoginFlowEndpointTests
         var (challenge, body) = app.Hydra.LoginAccepts.Single();
         Assert.That(challenge, Is.EqualTo("ch1"), "the challenge from the cookie, bound at [030]");
         Assert.That(FakeHydraAdmin.Field(body, "subject"), Is.EqualTo(Frodo), "the identity the owner typed, never what the callback claims");
+        Assert.That(body, Does.Contain("\"remember\":false").And.Not.Contain("remember_for"), "not asked to be kept signed in");
         Assert.That(app.Identity.Releases.Single().authorization, Is.EqualTo($"Bearer {Convert.ToBase64String(app.Identity.ClientAuthToken)}"), "the registration is released right after proving the identity");
         Assert.That(response.Headers.GetValues("Set-Cookie").Single(), Does.StartWith($"{LoginFlowCookie.Name}=").And.Contain("expires=").IgnoreCase, "the flow cookie is gone");
     }
@@ -240,7 +255,7 @@ public class LoginFlowEndpointTests
     // ---------------------------------------------------------------------------------------
 
     /// <summary>GET the page for its antiforgery token, then POST the identity as the form does.</summary>
-    private static async Task<HttpResponseMessage> PostIdentityAsync(HttpClient browser, string challenge, string identity)
+    private static async Task<HttpResponseMessage> PostIdentityAsync(HttpClient browser, string challenge, string identity, bool remember = false)
     {
         var page = await browser.GetAsync($"/login?login_challenge={challenge}");
         var html = await page.Content.ReadAsStringAsync();
@@ -248,11 +263,16 @@ public class LoginFlowEndpointTests
         var token = Regex.Match(html, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
         Assert.That(token, Is.Not.Empty, "the login form carries an antiforgery token");
 
-        return await browser.PostAsync("/login", new FormUrlEncodedContent(new Dictionary<string, string>
+        var form = new Dictionary<string, string>
         {
             ["__RequestVerificationToken"] = token,
             ["login_challenge"] = challenge,
             ["identity"] = identity,
-        }));
+        };
+        if (remember)
+        {
+            form["remember"] = "true";
+        }
+        return await browser.PostAsync("/login", new FormUrlEncodedContent(form));
     }
 }

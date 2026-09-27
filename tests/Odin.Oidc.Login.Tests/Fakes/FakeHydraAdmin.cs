@@ -16,13 +16,18 @@ public sealed class FakeHydraAdmin
     public string? LoginHint { get; set; }
     public List<string> RequestedScope { get; set; } = ["openid", "offline"];
     public bool ConsentSkip { get; set; }
+    public bool ClientSkipConsent { get; set; }
+    public string ConsentSubject { get; set; } = "frodo.dotyou.cloud";
+    public bool LogoutRpInitiated { get; set; }
     /// <summary>Answer every login call with 410: the challenge was already answered.</summary>
     public bool LoginGone { get; set; }
 
     public List<(string challenge, string body)> LoginAccepts { get; } = [];
     public List<(string challenge, string body)> LoginRejects { get; } = [];
     public List<(string challenge, string body)> ConsentAccepts { get; } = [];
+    public List<(string challenge, string body)> ConsentRejects { get; } = [];
     public List<(string challenge, string body)> LogoutAccepts { get; } = [];
+    public List<(string challenge, string body)> LogoutRejects { get; } = [];
 
     public RecordingHandler Handler { get; }
 
@@ -65,19 +70,29 @@ public sealed class FakeHydraAdmin
             case ("GET", "/admin/oauth2/auth/requests/consent"):
                 return Task.FromResult(RecordingHandler.Json(HttpStatusCode.OK, JsonSerializer.Serialize(new
                 {
-                    challenge, skip = ConsentSkip, subject = "frodo.dotyou.cloud",
-                    client = new { client_id = "rp", client_name = "Demo relying party", skip_consent = false },
+                    challenge, skip = ConsentSkip, subject = ConsentSubject,
+                    client = new { client_id = "rp", client_name = "Demo relying party", skip_consent = ClientSkipConsent },
                     requested_scope = RequestedScope,
                     requested_access_token_audience = Array.Empty<string>(),
                 })));
             case ("PUT", "/admin/oauth2/auth/requests/consent/accept"):
                 ConsentAccepts.Add((challenge, body!));
                 return Task.FromResult(Redirect());
+            case ("PUT", "/admin/oauth2/auth/requests/consent/reject"):
+                ConsentRejects.Add((challenge, body!));
+                return Task.FromResult(Redirect());
             case ("GET", "/admin/oauth2/auth/requests/logout"):
-                return Task.FromResult(RecordingHandler.Json(HttpStatusCode.OK, JsonSerializer.Serialize(new { challenge, subject = "frodo.dotyou.cloud", rp_initiated = true })));
+                return Task.FromResult(RecordingHandler.Json(HttpStatusCode.OK, JsonSerializer.Serialize(new
+                {
+                    challenge, subject = "frodo.dotyou.cloud", rp_initiated = LogoutRpInitiated,
+                    client = new { client_id = "rp", client_name = "Demo relying party" },
+                })));
             case ("PUT", "/admin/oauth2/auth/requests/logout/accept"):
                 LogoutAccepts.Add((challenge, body ?? ""));
                 return Task.FromResult(Redirect());
+            case ("PUT", "/admin/oauth2/auth/requests/logout/reject"):
+                LogoutRejects.Add((challenge, body ?? ""));
+                return Task.FromResult(RecordingHandler.Json(HttpStatusCode.OK, "{}"));
             default:
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent($"fake hydra: {request.Method} {path}") });
         }
