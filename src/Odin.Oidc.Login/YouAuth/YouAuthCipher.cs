@@ -1,4 +1,6 @@
 using Odin.Core;
+using Odin.Core.Cryptography.Crypto;
+using AesGcm = Odin.Core.Cryptography.Crypto.AesGcm;
 
 namespace Odin.Oidc.Login.YouAuth;
 
@@ -11,8 +13,10 @@ namespace Odin.Oidc.Login.YouAuth;
 /// </summary>
 public static class YouAuthCipher
 {
-    public static byte[] Open(string? cipher, byte[] cipherText, SensitiveByteArray key, byte[] iv)
+    public static byte[] Open(string? cipher, byte[] cipherText, SensitiveByteArray key, byte[] iv) => cipher switch
     {
-        throw new NotImplementedException();
-    }
+        YouAuthWire.CipherAesGcm => AesGcm.Decrypt(cipherText, key, iv),
+        null or "" or YouAuthWire.CipherAesCbc => AesCbc.Decrypt(cipherText, key, iv),
+        _ => throw new ArgumentException($"Token sealed with a cipher this app does not know: '{cipher}'", nameof(cipher))
+    };
 }

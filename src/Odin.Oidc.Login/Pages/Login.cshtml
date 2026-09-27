@@ -1,0 +1,22 @@
+@page
+@model Odin.Oidc.Login.Pages.LoginModel
+@{
+    ViewData["Title"] = "Sign in";
+}
+<h1>Sign in with Homebase</h1>
+<p>
+    <strong>@Model.RelyingPartyName</strong> asks you to prove who you are.
+    Type your Homebase identity and you will be sent to it to sign in and approve.
+</p>
+<form method="post">
+    <input type="hidden" name="login_challenge" value="@Model.LoginChallenge">
+    <label for="identity">Your identity</label>
+    <input type="text" id="identity" name="identity" value="@Model.Identity" placeholder="frodo.dotyou.cloud"
+           autocomplete="username" autocapitalize="none" spellcheck="false" autofocus required>
+    @if (Model.Problem != null)
+    {
+        <p class="error">@Model.Problem</p>
+    }
+    <button type="submit">Continue</button>
+</form>
+<p class="muted">Your password never leaves your own identity. This site only learns that it is you.</p>

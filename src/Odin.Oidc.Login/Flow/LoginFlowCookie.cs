@@ -1,4 +1,5 @@
-#pragma warning disable CS9113 // stub: replaced by the implementation commit
+using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Options;
 using Odin.Oidc.Login.Options;
@@ -13,10 +14,40 @@ public sealed class LoginFlowCookie(IDataProtectionProvider dataProtection, IOpt
 {
     public const string Name = "__Host-odin_oidc_flow";
 
-    public void Write(HttpResponse response, LoginFlowState state) => throw new NotImplementedException();
+    private readonly ITimeLimitedDataProtector _protector =
+        dataProtection.CreateProtector("Odin.Oidc.Login.Flow.v1").ToTimeLimitedDataProtector();
+
+    private static readonly CookieOptions Attributes = new()
+    {
+        HttpOnly = true,
+        Secure = true,
+        SameSite = SameSiteMode.Lax,
+        Path = "/",
+        IsEssential = true,
+    };
+
+    public void Write(HttpResponse response, LoginFlowState state)
+    {
+        var value = _protector.Protect(JsonSerializer.Serialize(state), options.Value.FlowLifetime);
+        response.Cookies.Append(Name, value, Attributes);
+    }
 
     /// <summary>The state, or null when there is no cookie or it is expired or tampered with.</summary>
-    public LoginFlowState? Read(HttpRequest request) => throw new NotImplementedException();
+    public LoginFlowState? Read(HttpRequest request)
+    {
+        if (!request.Cookies.TryGetValue(Name, out var value) || string.IsNullOrEmpty(value))
+        {
+            return null;
+        }
+        try
+        {
+            return JsonSerializer.Deserialize<LoginFlowState>(_protector.Unprotect(value));
+        }
+        catch (Exception e) when (e is CryptographicException or JsonException)
+        {
+            return null;
+        }
+    }
 
-    public void Delete(HttpResponse response) => throw new NotImplementedException();
+    public void Delete(HttpResponse response) => response.Cookies.Delete(Name, Attributes);
 }
