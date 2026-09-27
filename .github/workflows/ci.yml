@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout odin-oidc
+        uses: actions/checkout@v4
+        with:
+          path: odin-oidc
+
+      - name: Read the pinned odin-core commit
+        id: core
+        run: echo "sha=$(cat odin-oidc/odin-core.ref)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout odin-core next to it
+        uses: actions/checkout@v4
+        with:
+          repository: homebase-id/odin-core
+          ref: ${{ steps.core.outputs.sha }}
+          path: odin-core
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: odin-oidc/global.json
+
+      - name: Build (warnings are errors)
+        run: dotnet build odin-oidc/odin-oidc.sln --configuration Release --warnaserror
+
+      - name: Test
+        run: dotnet test odin-oidc/odin-oidc.sln --configuration Release --no-build
+
+      - name: Docker image builds
+        run: docker build --build-arg ODIN_CORE_SHA=${{ steps.core.outputs.sha }} -t odin-oidc-login odin-oidc
