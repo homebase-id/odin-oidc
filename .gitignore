@@ -1,0 +1,63 @@
+*.swp
+*.*~
+project.lock.json
+.DS_Store
+*.pyc
+nupkg/
+
+# Visual Studio Code
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/extensions.json
+
+# Rider
+.idea
+
+# User-specific files
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+build/
+bld/
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+msbuild.log
+msbuild.err
+msbuild.wrn
+dist/
+
+# ContainerBuild directories
+bin-container/
+obj-container/
+
+# Visual Studio 2015
+.vs/
+
+# examples stuffs dependencies
+node_modules/
+
+# production settings will have secrets, so leave it out of source control
+appsettings.production.json
+
+# "your" local setting files
+appsettings.local.json
+TestResults/
+
+# Scratch worktrees created for background agents; never part of the tree.
+.claude/worktrees/
+
+# odin-oidc
+docker/.env
+keys/
+docker/demo-client.json

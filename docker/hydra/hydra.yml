@@ -1,0 +1,39 @@
+# Hydra configuration. Values here are the ones that do not change per environment; the URLs,
+# DSN and system secret come from the environment (docker/.env) and override anything here.
+# Reference: https://www.ory.com/docs/hydra/reference/configuration
+
+serve:
+  cookies:
+    same_site_mode: Lax
+
+urls:
+  self:
+    issuer: http://127.0.0.1:14444/
+  login: https://collab.dotyou.cloud:8443/login
+  consent: https://collab.dotyou.cloud:8443/consent
+  logout: https://collab.dotyou.cloud:8443/logout
+
+secrets:
+  system:
+    - overridden-by-SECRETS_SYSTEM-from-the-environment
+
+oidc:
+  subject_identifiers:
+    # The subject is the identity's domain, the same for every relying party.
+    supported_types:
+      - public
+
+oauth2:
+  pkce:
+    enforced_for_public_clients: true
+  # Development only: puts the reason on the error page instead of a generic message.
+  expose_internal_errors: true
+
+ttl:
+  # How long a login or consent challenge stays valid: the owner's sign-in at their identity
+  # happens inside this window.
+  login_consent_request: 30m
+
+log:
+  level: debug
+  leak_sensitive_values: false

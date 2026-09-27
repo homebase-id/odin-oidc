@@ -1,0 +1,55 @@
+# Ory Hydra with Postgres, for development. The shape of Hydra's own quickstart-postgres.yml.
+# Ports: Hydra public 4444 -> host 14444, admin 4445 -> host 14445 (odin-core's dev host owns 4444);
+# The CLI demo relying party (scripts/run-demo-rp.sh) runs on the host network on 5555.
+# `--dev` disables Hydra's production checks (allows http redirect URIs, non-Secure cookies);
+# compose.prod.yml overrides it away.
+name: odin-oidc
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: hydra
+      POSTGRES_USER: hydra
+      POSTGRES_PASSWORD: ${HYDRA_DB_PASSWORD:?set in docker/.env}
+    volumes:
+      - hydra-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hydra -d hydra"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  hydra-migrate:
+    image: oryd/hydra:v26.2.0
+    command: migrate sql up -e --yes
+    environment:
+      DSN: postgres://hydra:${HYDRA_DB_PASSWORD}@postgres:5432/hydra?sslmode=disable&max_conns=20&max_idle_conns=4
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+
+  hydra:
+    image: oryd/hydra:v26.2.0
+    command: serve all --dev --config /etc/config/hydra/hydra.yml
+    environment:
+      DSN: postgres://hydra:${HYDRA_DB_PASSWORD}@postgres:5432/hydra?sslmode=disable&max_conns=20&max_idle_conns=4
+      SECRETS_SYSTEM: ${HYDRA_SECRETS_SYSTEM:?set in docker/.env}
+      URLS_SELF_ISSUER: ${HYDRA_ISSUER:?set in docker/.env}
+      URLS_LOGIN: ${LOGIN_APP_URL:?set in docker/.env}/login
+      URLS_CONSENT: ${LOGIN_APP_URL}/consent
+      URLS_LOGOUT: ${LOGIN_APP_URL}/logout
+    volumes:
+      - ./hydra:/etc/config/hydra:ro
+    ports:
+      - "14444:4444" # public: /.well-known/openid-configuration, /oauth2/*
+      - "14445:4445" # admin: /admin/* -- never expose beyond localhost
+    depends_on:
+      hydra-migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  hydra-pgdata:
