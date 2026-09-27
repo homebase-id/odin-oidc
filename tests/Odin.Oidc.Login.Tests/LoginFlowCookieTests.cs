@@ -10,7 +10,7 @@ namespace Odin.Oidc.Login.Tests;
 [TestFixture]
 public class LoginFlowCookieTests
 {
-    private static readonly LoginFlowState State = new("challenge-1", "frodo.dotyou.cloud", "state-xyz", "ZGVy");
+    private static readonly LoginFlowState State = new("challenge-1", "frodo.dotyou.cloud", "state-xyz", """{"kty":"EC","crv":"P-384","x":"","y":"","d":""}""");
 
     private static LoginFlowCookie Cookie(TimeSpan? lifetime = null)
     {
