@@ -112,12 +112,14 @@ public sealed class YouAuthClient(IHttpClientFactory httpClientFactory, IOptions
             using var response = await http.SendAsync(request, ct);
             if (!response.IsSuccessStatusCode)
             {
-                logger.LogWarning("YouAuth: {identity} answered the release of this login's registration with {status}; it expires on its own", identity, (int)response.StatusCode);
+                logger.LogWarning("YouAuth: the identity answered the release of this login's registration with {status}; it expires on its own", (int)response.StatusCode);
+                logger.LogDebug("YouAuth: the identity was {identity}", identity);
             }
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException)
         {
-            logger.LogWarning(e, "YouAuth: could not release this login's registration at {identity}; it expires on its own", identity);
+            logger.LogWarning("YouAuth: could not release this login's registration at the identity ({reason}); it expires on its own", e.GetType().Name);
+            logger.LogDebug(e, "YouAuth: the identity was {identity}", identity);
         }
     }
 }

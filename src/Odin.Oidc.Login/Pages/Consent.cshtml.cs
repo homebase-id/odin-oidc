@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.RateLimiting;
 using Odin.Oidc.Login.Claims;
 using Odin.Oidc.Login.Flow;
 using Odin.Oidc.Login.Hydra;
@@ -12,6 +13,7 @@ namespace Odin.Oidc.Login.Pages;
 /// Hydra remembers, or a client Hydra trusts (registered with skip consent, for first parties), is
 /// accepted without asking. The claims are read fresh from the identity every time.
 /// </summary>
+[EnableRateLimiting(RateLimits.FormPosts)]
 public sealed class ConsentModel(HydraAdminClient hydra, ProfileClaims profileClaims) : PageModel
 {
     public string ConsentChallenge { get; private set; } = "";

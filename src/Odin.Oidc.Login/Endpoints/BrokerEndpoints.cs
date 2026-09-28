@@ -18,10 +18,10 @@ public static class BrokerEndpoints
 {
     public static void MapBrokerEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/youauth/callback", YouAuthCallback);
+        app.MapGet("/youauth/callback", YouAuthCallback).RequireRateLimiting(RateLimits.FormPosts);
         app.MapGet("/logout", Logout);
         app.MapGet("/.well-known/youauth-client.json", ClientDocument);
-        app.MapGet("/healthz", () => Results.Text("ok"));
+        app.MapGet("/healthz", Health);
     }
 
     /// <summary>
@@ -56,7 +56,8 @@ public static class BrokerEndpoints
         // YouAuth [060]: the identity reported a failure, or the owner declined.
         if (!string.IsNullOrEmpty(error))
         {
-            logger.LogInformation("YouAuth: {identity} answered with error={error} ({description})", flow.Identity, error, errorDescription);
+            logger.LogInformation("YouAuth: the identity answered with error={error}", error);
+            logger.LogDebug("YouAuth: {identity} answered with error={error} ({description})", flow.Identity, error, errorDescription);
             var redirect = await hydra.RejectLoginAsync(flow.LoginChallenge, new HydraReject
             {
                 Error = "access_denied",
@@ -77,7 +78,8 @@ public static class BrokerEndpoints
         }
         catch (YouAuthException e)
         {
-            logger.LogWarning(e, "YouAuth: the exchange with {identity} failed", flow.Identity);
+            logger.LogWarning("YouAuth: the token exchange with the identity failed: {reason}", e.Message.Replace(flow.Identity, "the identity"));
+            logger.LogDebug(e, "YouAuth: the exchange with {identity} failed", flow.Identity);
             var redirect = await hydra.RejectLoginAsync(flow.LoginChallenge, new HydraReject
             {
                 Error = "server_error",
@@ -90,7 +92,8 @@ public static class BrokerEndpoints
         await youAuth.ReleaseAsync(flow.Identity, clientAuthToken, ct);
         CryptographicOperations.ZeroMemory(clientAuthToken);
 
-        logger.LogInformation("Signed in {identity} for Hydra challenge {challenge}", flow.Identity, flow.LoginChallenge);
+        logger.LogInformation("Signed in a subject for a Hydra challenge");
+        logger.LogDebug("Signed in {identity} for Hydra challenge {challenge}", flow.Identity, flow.LoginChallenge);
         var next = await hydra.AcceptLoginAsync(flow.LoginChallenge, new HydraAcceptLogin { Subject = flow.Identity, Remember = flow.Remember }, ct);
         return Results.Redirect(next);
     }
@@ -99,6 +102,16 @@ public static class BrokerEndpoints
     private static async Task<IResult> Logout([FromQuery(Name = "logout_challenge")] string? challenge, HydraAdminClient hydra, CancellationToken ct)
     {
         return Results.Redirect(await hydra.AcceptLogoutAsync(SignInStoppedException.Required(challenge, "logout_challenge"), ct));
+    }
+
+    /// <summary>
+    /// Health means this process answers and Hydra is ready, so a deploy's smoke test and an uptime
+    /// probe see the whole broker.
+    /// </summary>
+    private static async Task<IResult> Health(HydraAdminClient hydra, CancellationToken ct)
+    {
+        var hydraReady = await hydra.IsReadyAsync(ct);
+        return hydraReady ? Results.Text("ok") : Results.Text("hydra is not ready", statusCode: StatusCodes.Status503ServiceUnavailable);
     }
 
     /// <summary>

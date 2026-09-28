@@ -39,6 +39,20 @@ public sealed class HydraAdminClient(HttpClient http)
     public Task<string> AcceptLogoutAsync(string challenge, CancellationToken ct) =>
         PutAsync(Url("logout", "/accept", challenge), new { }, ct);
 
+    /// <summary>Hydra's own readiness (database reachable, migrations applied), for this app's health answer.</summary>
+    public async Task<bool> IsReadyAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var response = await http.GetAsync("health/ready", ct);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException)
+        {
+            return false;
+        }
+    }
+
     //
 
     private static string Url(string flow, string action, string challenge) =>
