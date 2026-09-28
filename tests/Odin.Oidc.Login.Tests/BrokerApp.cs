@@ -14,16 +14,27 @@ namespace Odin.Oidc.Login.Tests;
 /// </summary>
 public sealed class BrokerApp : WebApplicationFactory<Program>
 {
+    public const string Frodo = "frodo.dotyou.cloud";
+
     public FakeHydraAdmin Hydra { get; } = new();
     public FakeIdentity Identity { get; }
     public string PublicHost { get; }
 
-    public BrokerApp(string identityDomain = "frodo.dotyou.cloud", string publicHost = "oidc.example.org")
+    public BrokerApp(string identityDomain = Frodo, string publicHost = "oidc.example.org")
     {
         Identity = new FakeIdentity(identityDomain);
         PublicHost = publicHost;
         ClientOptions.BaseAddress = new Uri("https://localhost");
         ClientOptions.AllowAutoRedirect = false;
+    }
+
+    /// <summary>POST a page's form with the antiforgery token the page rendered.</summary>
+    public static async Task<HttpResponseMessage> PostFormAsync(HttpClient browser, string path, string pageHtml, Dictionary<string, string> form)
+    {
+        var token = System.Text.RegularExpressions.Regex.Match(pageHtml, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
+        NUnit.Framework.Assert.That(token, Is.Not.Empty, "the form carries an antiforgery token");
+        form["__RequestVerificationToken"] = token;
+        return await browser.PostAsync(path, new FormUrlEncodedContent(form));
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)

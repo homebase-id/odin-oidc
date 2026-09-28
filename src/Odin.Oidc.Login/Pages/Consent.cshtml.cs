@@ -1,31 +1,63 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Odin.Oidc.Login.Claims;
 using Odin.Oidc.Login.Flow;
 using Odin.Oidc.Login.Hydra;
 
 namespace Odin.Oidc.Login.Pages;
 
 /// <summary>
-/// Hydra's consent hand-off. Today every consent is accepted for what the relying party asked: the
-/// owner already consented at their identity to this app by name. A screen naming the relying party
-/// is the next step, and it will honour <c>Skip</c> the way this does.
+/// Hydra's consent hand-off. The owner consented at their identity to this app by name; here the
+/// relying party is named, with what it will learn. Allow is remembered for a month. A consent
+/// Hydra remembers, or a client Hydra trusts (registered with skip consent, for first parties), is
+/// accepted without asking. The claims are read fresh from the identity every time.
 /// </summary>
-public sealed class ConsentModel(HydraAdminClient hydra) : PageModel
+public sealed class ConsentModel(HydraAdminClient hydra, ProfileClaims profileClaims) : PageModel
 {
+    public string ConsentChallenge { get; private set; } = "";
+    public HydraConsentRequest Consent { get; private set; } = new();
+
     public async Task<IActionResult> OnGetAsync([FromQuery(Name = "consent_challenge")] string? consentChallenge, CancellationToken ct)
     {
-        if (string.IsNullOrEmpty(consentChallenge))
+        var challenge = SignInStoppedException.Required(consentChallenge, "consent_challenge");
+        var request = await hydra.GetConsentRequestAsync(challenge, ct);
+        if (request.Skip || request.Client.SkipConsent)
         {
-            throw new SignInStoppedException("Missing consent_challenge.");
+            return Redirect(await AcceptAsync(challenge, request, ct));
         }
 
-        var request = await hydra.GetConsentRequestAsync(consentChallenge, ct);
-        var next = await hydra.AcceptConsentAsync(consentChallenge, new HydraAcceptConsent
+        ConsentChallenge = challenge;
+        Consent = request;
+        return Page();
+    }
+
+    public async Task<IActionResult> OnPostAsync(
+        [FromForm(Name = "consent_challenge")] string? consentChallenge,
+        [FromForm(Name = "allow")] string? allow,
+        CancellationToken ct)
+    {
+        var challenge = SignInStoppedException.Required(consentChallenge, "consent_challenge");
+        if (allow != "yes")
         {
-            GrantScope = request.RequestedScope ?? [],
+            return Redirect(await hydra.RejectConsentAsync(challenge, new HydraReject
+            {
+                Error = "access_denied",
+                ErrorDescription = "The user did not allow this site to know who they are",
+            }, ct));
+        }
+
+        // What is granted comes from Hydra, not the form.
+        return Redirect(await AcceptAsync(challenge, await hydra.GetConsentRequestAsync(challenge, ct), ct));
+    }
+
+    private async Task<string> AcceptAsync(string challenge, HydraConsentRequest request, CancellationToken ct)
+    {
+        return await hydra.AcceptConsentAsync(challenge, new HydraAcceptConsent
+        {
+            GrantScope = request.RequestedScope,
             GrantAccessTokenAudience = request.RequestedAccessTokenAudience,
-            Session = new HydraConsentSession { IdToken = new Dictionary<string, object>() },
+            Remember = true,
+            Session = new HydraConsentSession { IdToken = await profileClaims.ForAsync(request.Subject ?? "", request.RequestedScope, ct) },
         }, ct);
-        return Redirect(next);
     }
 }

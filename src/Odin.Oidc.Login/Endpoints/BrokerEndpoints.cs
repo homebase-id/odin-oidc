@@ -11,7 +11,7 @@ namespace Odin.Oidc.Login.Endpoints;
 
 /// <summary>
 /// The YouAuth callback, Hydra's logout hand-off, the client document the identity reads about
-/// this app, and health. Login and consent are Razor pages, because they have or will have a form.
+/// this app, and health. Login and consent are Razor pages, because they have a form.
 /// A sign-in that cannot go on throws <see cref="SignInStoppedException"/>; the Error page renders it.
 /// </summary>
 public static class BrokerEndpoints
@@ -91,21 +91,14 @@ public static class BrokerEndpoints
         CryptographicOperations.ZeroMemory(clientAuthToken);
 
         logger.LogInformation("Signed in {identity} for Hydra challenge {challenge}", flow.Identity, flow.LoginChallenge);
-        var next = await hydra.AcceptLoginAsync(flow.LoginChallenge, new HydraAcceptLogin { Subject = flow.Identity }, ct);
+        var next = await hydra.AcceptLoginAsync(flow.LoginChallenge, new HydraAcceptLogin { Subject = flow.Identity, Remember = flow.Remember }, ct);
         return Results.Redirect(next);
     }
 
-    /// <summary>Hydra's logout hand-off. There is no session here to end, so it is accepted at once.</summary>
-    private static async Task<IResult> Logout(
-        [FromQuery(Name = "logout_challenge")] string? challenge,
-        HydraAdminClient hydra,
-        CancellationToken ct)
+    /// <summary>Hydra's logout hand-off, accepted at once: nothing links here but relying parties, whose logout is their own decision.</summary>
+    private static async Task<IResult> Logout([FromQuery(Name = "logout_challenge")] string? challenge, HydraAdminClient hydra, CancellationToken ct)
     {
-        if (string.IsNullOrEmpty(challenge))
-        {
-            throw new SignInStoppedException("Missing logout_challenge.");
-        }
-        return Results.Redirect(await hydra.AcceptLogoutAsync(challenge, ct));
+        return Results.Redirect(await hydra.AcceptLogoutAsync(SignInStoppedException.Required(challenge, "logout_challenge"), ct));
     }
 
     /// <summary>

@@ -62,3 +62,4 @@ docker/.env
 keys/
 docker/demo-client.json
 certs/
+docker/demo-public-client.json

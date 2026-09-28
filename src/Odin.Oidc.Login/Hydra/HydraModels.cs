@@ -23,7 +23,7 @@ public sealed class HydraLoginRequest
     /// <summary>Hydra already knows the user (a remembered session): accept at once with <see cref="Subject"/>, no UI.</summary>
     public bool Skip { get; set; }
     public string? Subject { get; set; }
-    public HydraClient? Client { get; set; }
+    public HydraClient Client { get; set; } = new();
     public HydraOidcContext? OidcContext { get; set; }
 }
 
@@ -31,15 +31,23 @@ public sealed class HydraConsentRequest
 {
     /// <summary>The user already consented to this client and scope (remembered): accept at once, no UI.</summary>
     public bool Skip { get; set; }
-    public HydraClient? Client { get; set; }
-    public List<string>? RequestedScope { get; set; }
+    public string? Subject { get; set; }
+    public HydraClient Client { get; set; } = new();
+    public List<string> RequestedScope { get; set; } = [];
     public List<string>? RequestedAccessTokenAudience { get; set; }
+}
+
+/// <summary>How long Hydra remembers a login or a consent for a browser when asked to: a month.</summary>
+public static class Remembered
+{
+    public const long ForSeconds = 30L * 24 * 3600;
 }
 
 public sealed class HydraAcceptLogin
 {
     public string Subject { get; set; } = "";
     public bool Remember { get; set; }
+    public long? RememberFor => Remember ? Remembered.ForSeconds : null;
 }
 
 public sealed class HydraConsentSession
@@ -52,6 +60,7 @@ public sealed class HydraAcceptConsent
     public List<string> GrantScope { get; set; } = [];
     public List<string>? GrantAccessTokenAudience { get; set; }
     public bool Remember { get; set; }
+    public long? RememberFor => Remember ? Remembered.ForSeconds : null;
     public HydraConsentSession? Session { get; set; }
 }
 

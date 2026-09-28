@@ -21,7 +21,9 @@ sequenceDiagram
     app->>idn: POST /api/v2/auth/logout (Bearer token): release the registration
     app->>hydra: PUT /admin/oauth2/auth/requests/login/accept {subject: sam.dotyou.cloud}
     hydra->>app: 302 /consent?consent_challenge
-    app->>hydra: PUT .../consent/accept {grant_scope, session.id_token}
+    app->>idn: GET /pub/profile (profile scope): the published name
+    app->>app: remembered, or the client skips consent? accept. Else the page: "Sign in to <relying party> as <identity>?"
+    app->>hydra: PUT .../consent/accept {grant_scope, remember (a month), session.id_token: the claims below}
     hydra->>rp: 302 redirect_uri?code&state
     rp->>hydra: POST /oauth2/token (code, PKCE verifier)
     hydra->>rp: id_token (sub = sam.dotyou.cloud), access token
@@ -34,3 +36,20 @@ sequenceDiagram
 | Hydra's Postgres | OAuth client registrations, signing keys, login/consent sessions (subject, remembered consents), authorization codes, access and refresh tokens | Hydra's own state; an OIDC issuer cannot be stateless |
 | Odin.Oidc.Login | A Data Protection key ring, nothing else at rest | Each login's state lives in a 10-minute encrypted cookie and dies with it |
 | The identity | A domain registration for the broker, between authorize and the broker's logout call | The broker releases it as soon as the identity is proven |
+
+## What a relying party learns
+
+The one list; the README and the code point here.
+
+| Claim | Scope | Value |
+|---|---|---|
+| `sub` | always | the identity's domain |
+| `did` | always | `did:web:` + domain; resolves to the identity's DID document at `/.well-known/did.json`. A custom claim: OIDC allows any, and a relying party that does not know it ignores it |
+| `name`, `given_name`, `family_name` | `profile` | from the identity's public profile card at `/pub/profile`; absent when not published |
+| `picture` | `profile` | `https://<domain>/pub/image`, the identity's public image |
+| `preferred_username` | `profile` | the domain |
+| `profile` | `profile` | `https://<domain>/`, OIDC's profile-page claim: the home page, which carries the identity's schema.org JSON-LD |
+
+Read from the identity at consent time, never stored by the broker; Hydra keeps them in the
+consent session for the id_token and userinfo. No email: an identity's mail address is not public
+information. No `website`: it would be the profile page again.

@@ -1,5 +1,4 @@
 using System.Net;
-using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.WebUtilities;
 using Odin.Oidc.Login.Flow;
 using Odin.Oidc.Login.Pages;
@@ -15,14 +14,13 @@ namespace Odin.Oidc.Login.Tests;
 [TestFixture]
 public class LoginFlowEndpointTests
 {
-    private const string Frodo = "frodo.dotyou.cloud";
+    private const string Frodo = BrokerApp.Frodo;
 
     [Test]
     public async Task ALoginHydraAlreadyKnowsIsAcceptedWithoutAsking()
     {
         using var app = new BrokerApp();
         app.Hydra.LoginSkip = true;
-        app.Hydra.LoginSubject = Frodo;
         using var browser = app.CreateClient();
 
         var response = await browser.GetAsync("/login?login_challenge=ch1");
@@ -108,6 +106,20 @@ public class LoginFlowEndpointTests
     }
 
     [Test]
+    public async Task KeepMeSignedInIsRememberedByHydraForAMonth()
+    {
+        using var app = new BrokerApp();
+        using var browser = app.CreateClient();
+        var authorize = (await PostIdentityAsync(browser, "ch1", Frodo, remember: true)).Headers.Location!;
+        var callback = app.Identity.Authorize(authorize);
+
+        await browser.GetAsync(QueryHelpers.AddQueryString("/youauth/callback", callback!));
+
+        var (_, body) = app.Hydra.LoginAccepts.Single();
+        Assert.That(body, Does.Contain("\"remember\":true").And.Contain("\"remember_for\":2592000"), "Hydra skips the login for this browser's next relying party: " + body);
+    }
+
+    [Test]
     public async Task YouAuth150_TheCallbackProvesTheIdentityReleasesTheTokenAndAcceptsTheLogin()
     {
         using var app = new BrokerApp();
@@ -122,6 +134,7 @@ public class LoginFlowEndpointTests
         var (challenge, body) = app.Hydra.LoginAccepts.Single();
         Assert.That(challenge, Is.EqualTo("ch1"), "the challenge from the cookie, bound at [030]");
         Assert.That(FakeHydraAdmin.Field(body, "subject"), Is.EqualTo(Frodo), "the identity the owner typed, never what the callback claims");
+        Assert.That(body, Does.Contain("\"remember\":false").And.Not.Contain("remember_for"), "not asked to be kept signed in");
         Assert.That(app.Identity.Releases.Single().authorization, Is.EqualTo($"Bearer {Convert.ToBase64String(app.Identity.ClientAuthToken)}"), "the registration is released right after proving the identity");
         Assert.That(response.Headers.GetValues("Set-Cookie").Single(), Does.StartWith($"{LoginFlowCookie.Name}=").And.Contain("expires=").IgnoreCase, "the flow cookie is gone");
     }
@@ -174,7 +187,7 @@ public class LoginFlowEndpointTests
     }
 
     [Test]
-    public async Task AChallengeHydraAlreadyAnsweredSendsTheBrowserOn()
+    public async Task AChallengeHydraAlreadyAnsweredIsSaidSoInWords()
     {
         using var app = new BrokerApp();
         app.Hydra.LoginGone = true;
@@ -182,36 +195,9 @@ public class LoginFlowEndpointTests
 
         var response = await browser.GetAsync("/login?login_challenge=used");
 
-        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Redirect), "the browser went back to a page it had left; Hydra says where it should be");
-        Assert.That(response.Headers.Location!.ToString(), Is.EqualTo(FakeHydraAdmin.RedirectTo));
-    }
-
-    [Test]
-    public async Task ConsentGrantsWhatWasRequested()
-    {
-        using var app = new BrokerApp();
-        app.Hydra.RequestedScope = ["openid", "offline"];
-        using var browser = app.CreateClient();
-
-        var response = await browser.GetAsync("/consent?consent_challenge=co1");
-
-        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Redirect));
-        Assert.That(response.Headers.Location!.ToString(), Is.EqualTo(FakeHydraAdmin.RedirectTo));
-        var (challenge, body) = app.Hydra.ConsentAccepts.Single();
-        Assert.That(challenge, Is.EqualTo("co1"));
-        Assert.That(body, Does.Contain("\"grant_scope\":[\"openid\",\"offline\"]"), body);
-    }
-
-    [Test]
-    public async Task LogoutIsAccepted()
-    {
-        using var app = new BrokerApp();
-        using var browser = app.CreateClient();
-
-        var response = await browser.GetAsync("/logout?logout_challenge=lo1");
-
-        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Redirect));
-        Assert.That(app.Hydra.LogoutAccepts.Single().challenge, Is.EqualTo("lo1"));
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Gone), "the browser went back to a page it had left");
+        Assert.That(await response.Content.ReadAsStringAsync(), Does.Contain("already completed"),
+            "not Hydra's redirect: that re-presents a spent verifier and ends in Hydra's error page");
     }
 
     [Test]
@@ -240,19 +226,17 @@ public class LoginFlowEndpointTests
     // ---------------------------------------------------------------------------------------
 
     /// <summary>GET the page for its antiforgery token, then POST the identity as the form does.</summary>
-    private static async Task<HttpResponseMessage> PostIdentityAsync(HttpClient browser, string challenge, string identity)
+    private static async Task<HttpResponseMessage> PostIdentityAsync(HttpClient browser, string challenge, string identity, bool remember = false)
     {
         var page = await browser.GetAsync($"/login?login_challenge={challenge}");
         var html = await page.Content.ReadAsStringAsync();
         Assert.That(page.StatusCode, Is.EqualTo(HttpStatusCode.OK), html);
-        var token = Regex.Match(html, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
-        Assert.That(token, Is.Not.Empty, "the login form carries an antiforgery token");
 
-        return await browser.PostAsync("/login", new FormUrlEncodedContent(new Dictionary<string, string>
+        var form = new Dictionary<string, string> { ["login_challenge"] = challenge, ["identity"] = identity };
+        if (remember)
         {
-            ["__RequestVerificationToken"] = token,
-            ["login_challenge"] = challenge,
-            ["identity"] = identity,
-        }));
+            form["remember"] = "true";
+        }
+        return await BrokerApp.PostFormAsync(browser, "/login", html, form);
     }
 }

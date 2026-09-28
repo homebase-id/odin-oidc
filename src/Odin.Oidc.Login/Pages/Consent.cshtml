@@ -3,5 +3,24 @@
 @{
     ViewData["Title"] = "Approve";
 }
-@* Not rendered yet: every consent is accepted at once (see ConsentModel). The page exists so the
-   relying-party-naming consent screen slots in as a view and an OnPost. *@
+<h1>Sign in to <strong>@Model.Consent.Client.DisplayName</strong> as <strong>@Model.Consent.Subject</strong>?</h1>
+<p>If you allow it, this site learns:</p>
+<ul class="grants">
+    <li>your identity, @Model.Consent.Subject</li>
+    @if (Model.Consent.RequestedScope.Contains("profile"))
+    {
+        <li>your public name, picture and profile page</li>
+    }
+    @if (Model.Consent.RequestedScope.Contains("offline") || Model.Consent.RequestedScope.Contains("offline_access"))
+    {
+        <li>to stay signed in without asking again</li>
+    }
+</ul>
+<form method="post">
+    <input type="hidden" name="consent_challenge" value="@Model.ConsentChallenge">
+    <div class="actions">
+        <button type="submit" name="allow" value="yes">Allow</button>
+        <button type="submit" name="allow" value="no" class="secondary">Deny</button>
+    </div>
+</form>
+<p class="muted">Your identity has confirmed who you are to Homebase Sign-in. This question is about what this particular site may know, and your answer is remembered for a month on this browser.</p>
