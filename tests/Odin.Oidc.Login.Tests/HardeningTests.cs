@@ -1,7 +1,6 @@
 using System.Net;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Logging;
-using Odin.Oidc.Login.Tests.Fakes;
 
 namespace Odin.Oidc.Login.Tests;
 
@@ -15,15 +14,16 @@ public class HardeningTests
 {
     private const string Frodo = BrokerApp.Frodo;
 
-    private static HttpRequestMessage From(string address, string path, string? forwardedProto = null)
+    /// <summary>A browser at one address; the app sees it as the connection's remote address.</summary>
+    private static HttpClient BrowserAt(BrokerApp app, string address, string? forwardedProto = null)
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, path);
-        request.Headers.Add(BrokerApp.RemoteAddressHeader, address);
+        var browser = app.CreateClient();
+        browser.DefaultRequestHeaders.Add(BrokerApp.RemoteAddressHeader, address);
         if (forwardedProto != null)
         {
-            request.Headers.Add("X-Forwarded-Proto", forwardedProto);
+            browser.DefaultRequestHeaders.Add("X-Forwarded-Proto", forwardedProto);
         }
-        return request;
+        return browser;
     }
 
     // ---------------------------------------------------------------------------------------
@@ -36,13 +36,11 @@ public class HardeningTests
         using var app = new BrokerApp();
         app.Settings["Broker:TrustedProxyNetworks:0"] = "10.0.0.0/8";
         app.ClientOptions.BaseAddress = new Uri("http://localhost"); // plain http, as behind a proxy
-        using var browser = app.CreateClient();
+        using var viaProxy = BrowserAt(app, "10.1.2.3", forwardedProto: "https");
+        using var direct = BrowserAt(app, "192.168.1.9", forwardedProto: "https");
 
-        var viaProxy = await browser.SendAsync(From("10.1.2.3", "/healthz", forwardedProto: "https"));
-        var direct = await browser.SendAsync(From("192.168.1.9", "/healthz", forwardedProto: "https"));
-
-        Assert.That(viaProxy.Headers.Contains("Strict-Transport-Security"), Is.True, "the proxy said https, and it is believed");
-        Assert.That(direct.Headers.Contains("Strict-Transport-Security"), Is.False, "anyone else saying https is not; the request stays http");
+        Assert.That((await viaProxy.GetAsync("/healthz")).Headers.Contains("Strict-Transport-Security"), Is.True, "the proxy said https, and it is believed");
+        Assert.That((await direct.GetAsync("/healthz")).Headers.Contains("Strict-Transport-Security"), Is.False, "anyone else saying https is not; the request stays http");
     }
 
     [Test]
@@ -50,11 +48,10 @@ public class HardeningTests
     {
         using var app = new BrokerApp();
         app.ClientOptions.BaseAddress = new Uri("http://localhost");
-        using var browser = app.CreateClient();
+        using var browser = BrowserAt(app, "10.1.2.3", forwardedProto: "https");
 
-        var response = await browser.SendAsync(From("10.1.2.3", "/healthz", forwardedProto: "https"));
-
-        Assert.That(response.Headers.Contains("Strict-Transport-Security"), Is.False, "the safe default for a public repo: trust nobody until configured");
+        Assert.That((await browser.GetAsync("/healthz")).Headers.Contains("Strict-Transport-Security"), Is.False, "the safe default for a public repo: trust nobody until configured");
+        Assert.That(app.Logs.Select(l => l.message), Has.Some.Contains("Believing no X-Forwarded-*"), "and the mode is said at startup, so a first deploy sees it");
     }
 
     // ---------------------------------------------------------------------------------------
@@ -78,7 +75,11 @@ public class HardeningTests
         Assert.That(response.Headers.CacheControl?.NoStore, Is.True, "a sign-in page is never served from a cache");
         Assert.That(response.Headers.GetValues("Strict-Transport-Security").Single(), Does.Contain("max-age=31536000"), "the test client speaks https");
         Assert.That(html, Does.Not.Contain("<style"), "no inline style, so the policy needs no unsafe-inline");
-        Assert.That(html, Does.Contain("site.css"));
+        Assert.That(html, Does.Contain("site.css?v="), "the one stylesheet, with a content version");
+
+        var css = await browser.GetAsync("/site.css");
+        Assert.That(css.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(css.Headers.CacheControl?.Public, Is.True, "and it may be cached; the version in its link busts it");
     }
 
     [TestCase("/youauth/callback?state=x", HttpStatusCode.BadRequest)]
@@ -86,7 +87,7 @@ public class HardeningTests
     public async Task TheErrorPageCarriesTheSameHeaders(string path, HttpStatusCode expected)
     {
         using var app = new BrokerApp();
-        app.Hydra.LoginUnknown = true;
+        app.Hydra.LoginAnswer = HttpStatusCode.NotFound;
         using var browser = app.CreateClient();
 
         var response = await browser.GetAsync(path);
@@ -102,25 +103,24 @@ public class HardeningTests
     // ---------------------------------------------------------------------------------------
 
     [Test]
-    public async Task OneAddressIsSlowedDownAfterItsShareOfFormPosts()
+    public async Task OneAddressIsSlowedDownAfterItsShareOfRequests()
     {
         using var app = new BrokerApp();
         app.Settings["Broker:FormPostsPerMinute"] = "3";
-        using var browser = app.CreateClient();
+        using var browser = BrowserAt(app, "203.0.113.7");
+        var html = await (await browser.GetAsync("/login?login_challenge=ch1")).Content.ReadAsStringAsync(); // one of the three
 
-        var page = await browser.SendAsync(From("203.0.113.7", "/login?login_challenge=ch1"));
-        var html = await page.Content.ReadAsStringAsync();
-        HttpResponseMessage? last = null;
-        for (var i = 0; i < 4; i++)
-        {
-            last = await PostLoginAsync(browser, html, "203.0.113.7", "not a domain");
-        }
+        var second = await BrokerApp.PostFormAsync(browser, "/login", html, new() { ["login_challenge"] = "ch1", ["identity"] = "not a domain" });
+        var third = await BrokerApp.PostFormAsync(browser, "/login", html, new() { ["login_challenge"] = "ch1", ["identity"] = "not a domain" });
+        var fourth = await BrokerApp.PostFormAsync(browser, "/login", html, new() { ["login_challenge"] = "ch1", ["identity"] = "not a domain" });
 
-        Assert.That(last!.StatusCode, Is.EqualTo(HttpStatusCode.TooManyRequests), "the fourth post from one address in a minute");
-        Assert.That(await last.Content.ReadAsStringAsync(), Does.Contain("slow down").IgnoreCase);
+        Assert.That(second.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(third.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(fourth.StatusCode, Is.EqualTo(HttpStatusCode.TooManyRequests), "the fourth request from one address in a minute");
+        Assert.That(await fourth.Content.ReadAsStringAsync(), Does.Contain("slow down").IgnoreCase);
 
-        var other = await PostLoginAsync(browser, html, "203.0.113.8", "not a domain");
-        Assert.That(other.StatusCode, Is.EqualTo(HttpStatusCode.OK), "another address is not affected");
+        using var other = BrowserAt(app, "203.0.113.8");
+        Assert.That((await other.GetAsync("/login?login_challenge=ch1")).StatusCode, Is.EqualTo(HttpStatusCode.OK), "another address is not affected");
     }
 
     // ---------------------------------------------------------------------------------------
@@ -150,8 +150,8 @@ public class HardeningTests
     {
         using var app = new BrokerApp();
         using var browser = app.CreateClient();
-        var page = await browser.GetAsync("/login?login_challenge=ch1");
-        var authorize = (await PostLoginAsync(browser, await page.Content.ReadAsStringAsync(), "203.0.113.7", Frodo)).Headers.Location!;
+        var html = await (await browser.GetAsync("/login?login_challenge=ch1")).Content.ReadAsStringAsync();
+        var authorize = (await BrokerApp.PostFormAsync(browser, "/login", html, new() { ["login_challenge"] = "ch1", ["identity"] = Frodo })).Headers.Location!;
         var callback = app.Identity.Authorize(authorize);
         await browser.GetAsync(QueryHelpers.AddQueryString("/youauth/callback", callback!));
         await browser.GetAsync("/consent?consent_challenge=co1");
@@ -161,23 +161,5 @@ public class HardeningTests
         Assert.That(atInformationOrAbove.Select(l => l.message), Has.None.Contains(Frodo),
             "identity domains are the sensitive datum; they are Debug, which is off in production");
         Assert.That(app.Logs.Where(l => l.level == LogLevel.Debug).Select(l => l.message), Has.Some.Contains(Frodo), "and Debug has them for an incident");
-    }
-
-    // ---------------------------------------------------------------------------------------
-
-    private static async Task<HttpResponseMessage> PostLoginAsync(HttpClient browser, string pageHtml, string address, string identity)
-    {
-        var token = System.Text.RegularExpressions.Regex.Match(pageHtml, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
-        var request = new HttpRequestMessage(HttpMethod.Post, "/login")
-        {
-            Content = new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                ["__RequestVerificationToken"] = token,
-                ["login_challenge"] = "ch1",
-                ["identity"] = identity,
-            }),
-        };
-        request.Headers.Add(BrokerApp.RemoteAddressHeader, address);
-        return await browser.SendAsync(request);
     }
 }

@@ -1,5 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
+  <PropertyGroup>
+    <!-- A few requests a minute: workstation GC keeps the footprint small and steady. -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+  </PropertyGroup>
+
   <ItemGroup>
     <!-- odin-core's libraries, from the sibling checkout named by OdinCoreDir (Directory.Build.props).
          The ECDH/HKDF/AES the YouAuth flow needs is the code the identity runs; it is not re-implemented

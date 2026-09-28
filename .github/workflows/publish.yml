@@ -1,7 +1,9 @@
 name: Publish image
 
-# On a version tag: the login image for amd64 and arm64 to GHCR, public, built against the odin-core
-# commit in odin-core.ref. The job summary carries the digest to pin in a deployment.
+# On a version tag: the login image to GHCR, public, built against the odin-core commit in
+# odin-core.ref. amd64 only: building arm64 means either QEMU for the whole .NET build or a
+# cross-compile pin on the build stage, which is not verified yet. The job summary carries the
+# digest to pin in a deployment.
 on:
   push:
     tags: ["v*"]
@@ -20,7 +22,6 @@ jobs:
         id: core
         run: echo "sha=$(cat odin-core.ref)" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3
@@ -35,13 +36,12 @@ jobs:
           images: ghcr.io/${{ github.repository_owner }}/odin-oidc-login
           tags: |
             type=ref,event=tag
-            type=sha,prefix=sha-
 
       - id: build
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

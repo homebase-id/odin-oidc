@@ -13,7 +13,7 @@ namespace Odin.Oidc.Login.Pages;
 /// identity. POST: start the YouAuth flow at that identity, remembering the challenge in the flow
 /// cookie so the callback can answer it.
 /// </summary>
-[EnableRateLimiting(RateLimits.FormPosts)]
+[EnableRateLimiting(FormPostLimiter.Policy)]
 public sealed class LoginModel(HydraAdminClient hydra, YouAuthClient youAuth, LoginFlowCookie cookie, ILogger<LoginModel> logger) : PageModel
 {
     /// <summary>
