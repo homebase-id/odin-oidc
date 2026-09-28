@@ -12,16 +12,18 @@ public sealed class FakeHydraAdmin
     public const string RedirectTo = "http://127.0.0.1:14444/oauth2/auth?after=challenge";
 
     public bool LoginSkip { get; set; }
-    public string? LoginSubject { get; set; }
     public string? LoginHint { get; set; }
+    public string Subject { get; set; } = BrokerApp.Frodo;
     public List<string> RequestedScope { get; set; } = ["openid", "offline"];
     public bool ConsentSkip { get; set; }
+    public bool ClientSkipConsent { get; set; }
     /// <summary>Answer every login call with 410: the challenge was already answered.</summary>
     public bool LoginGone { get; set; }
 
     public List<(string challenge, string body)> LoginAccepts { get; } = [];
     public List<(string challenge, string body)> LoginRejects { get; } = [];
     public List<(string challenge, string body)> ConsentAccepts { get; } = [];
+    public List<(string challenge, string body)> ConsentRejects { get; } = [];
     public List<(string challenge, string body)> LogoutAccepts { get; } = [];
 
     public RecordingHandler Handler { get; }
@@ -40,6 +42,7 @@ public sealed class FakeHydraAdmin
             : query.TryGetValue("logout_challenge", out var xc) ? xc.ToString() : "";
 
         HttpResponseMessage Redirect() => RecordingHandler.Json(HttpStatusCode.OK, JsonSerializer.Serialize(new { redirect_to = RedirectTo }));
+        var client = new { client_id = "rp", client_name = "Demo relying party", skip_consent = ClientSkipConsent };
 
         if (LoginGone && path.StartsWith("/admin/oauth2/auth/requests/login"))
         {
@@ -51,8 +54,7 @@ public sealed class FakeHydraAdmin
             case ("GET", "/admin/oauth2/auth/requests/login"):
                 return Task.FromResult(RecordingHandler.Json(HttpStatusCode.OK, JsonSerializer.Serialize(new
                 {
-                    challenge, skip = LoginSkip, subject = LoginSubject ?? "",
-                    client = new { client_id = "rp", client_name = "Demo relying party", skip_consent = false },
+                    challenge, skip = LoginSkip, subject = LoginSkip ? Subject : "", client,
                     requested_scope = RequestedScope,
                     oidc_context = new { login_hint = LoginHint },
                 })));
@@ -65,16 +67,16 @@ public sealed class FakeHydraAdmin
             case ("GET", "/admin/oauth2/auth/requests/consent"):
                 return Task.FromResult(RecordingHandler.Json(HttpStatusCode.OK, JsonSerializer.Serialize(new
                 {
-                    challenge, skip = ConsentSkip, subject = "frodo.dotyou.cloud",
-                    client = new { client_id = "rp", client_name = "Demo relying party", skip_consent = false },
+                    challenge, skip = ConsentSkip, subject = Subject, client,
                     requested_scope = RequestedScope,
                     requested_access_token_audience = Array.Empty<string>(),
                 })));
             case ("PUT", "/admin/oauth2/auth/requests/consent/accept"):
                 ConsentAccepts.Add((challenge, body!));
                 return Task.FromResult(Redirect());
-            case ("GET", "/admin/oauth2/auth/requests/logout"):
-                return Task.FromResult(RecordingHandler.Json(HttpStatusCode.OK, JsonSerializer.Serialize(new { challenge, subject = "frodo.dotyou.cloud", rp_initiated = true })));
+            case ("PUT", "/admin/oauth2/auth/requests/consent/reject"):
+                ConsentRejects.Add((challenge, body!));
+                return Task.FromResult(Redirect());
             case ("PUT", "/admin/oauth2/auth/requests/logout/accept"):
                 LogoutAccepts.Add((challenge, body ?? ""));
                 return Task.FromResult(Redirect());

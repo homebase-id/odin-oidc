@@ -8,7 +8,7 @@ namespace Odin.Oidc.Login.Hydra;
 /// The admin calls of Hydra's login, consent and logout flows this app makes, over a typed
 /// HttpClient whose base address is the admin API (port 4445; never exposed). Contract: GET the
 /// request by its challenge, PUT accept or reject, send the browser to the <c>redirect_to</c> that
-/// comes back. Any call about a challenge already answered is HTTP 410 with a <c>redirect_to</c>.
+/// comes back. Any call about a challenge already answered is HTTP 410.
 /// </summary>
 public sealed class HydraAdminClient(HttpClient http)
 {
@@ -33,6 +33,9 @@ public sealed class HydraAdminClient(HttpClient http)
     public Task<string> AcceptConsentAsync(string challenge, HydraAcceptConsent accept, CancellationToken ct) =>
         PutAsync(Url("consent", "/accept", challenge), accept, ct);
 
+    public Task<string> RejectConsentAsync(string challenge, HydraReject reject, CancellationToken ct) =>
+        PutAsync(Url("consent", "/reject", challenge), reject, ct);
+
     public Task<string> AcceptLogoutAsync(string challenge, CancellationToken ct) =>
         PutAsync(Url("logout", "/accept", challenge), new { }, ct);
 
@@ -44,37 +47,37 @@ public sealed class HydraAdminClient(HttpClient http)
     private async Task<T> GetAsync<T>(string url, CancellationToken ct)
     {
         using var response = await http.GetAsync(url, ct);
-        return await ReadAsync<T>(response, url, ct);
+        return Parse<T>(await AnsweredAsync(response, url, ct), url);
     }
 
     /// <summary>Accept or reject; returns where to send the browser.</summary>
     private async Task<string> PutAsync<T>(string url, T payload, CancellationToken ct)
     {
         using var response = await http.PutAsJsonAsync(url, payload, Json, ct);
-        return (await ReadAsync<HydraRedirect>(response, url, ct)).RedirectTo;
+        return Parse<HydraRedirect>(await AnsweredAsync(response, url, ct), url).RedirectTo;
     }
 
-    private static async Task<T> ReadAsync<T>(HttpResponseMessage response, string url, CancellationToken ct)
+    /// <summary>The body of a successful answer; 410 and failures become exceptions.</summary>
+    private static async Task<string> AnsweredAsync(HttpResponseMessage response, string url, CancellationToken ct)
     {
         var body = await response.Content.ReadAsStringAsync(ct);
         if (response.StatusCode == HttpStatusCode.Gone)
         {
-            var redirect = Deserialize<HydraRedirect>(body)?.RedirectTo;
-            if (!string.IsNullOrEmpty(redirect))
-            {
-                throw new HydraAlreadyAnsweredException(redirect);
-            }
+            throw new HydraAlreadyAnsweredException();
         }
         if (!response.IsSuccessStatusCode)
         {
-            var error = Deserialize<HydraError>(body);
+            var error = TryParse<HydraError>(body);
             var detail = error?.Error != null ? $"{error.Error}: {error.ErrorDescription}" : body;
             throw new HydraException($"Hydra answered {response.RequestMessage?.Method} {url} with {(int)response.StatusCode}: {detail}");
         }
-        return Deserialize<T>(body) ?? throw new HydraException($"Hydra answered {response.RequestMessage?.Method} {url} with an empty body");
+        return body;
     }
 
-    private static T? Deserialize<T>(string body)
+    private static T Parse<T>(string body, string url) =>
+        TryParse<T>(body) ?? throw new HydraException($"Hydra answered {url} with an empty body");
+
+    private static T? TryParse<T>(string body)
     {
         try
         {

@@ -53,6 +53,22 @@ frodo, and the demo relying party shows an id_token whose `sub` is `frodo.dotyou
 Until `oidc.dotyou.cloud` has a certificate on the dev certbot host, the owner's consent page names
 the broker as collab, and collab itself cannot sign in through it.
 
+### 3. A public relying party with PKCE
+
+The way a browser or native app signs in: no client secret, PKCE required. `scripts/demo-rp.mjs`
+is one in eighty lines with no dependencies (Node 18+):
+
+```bash
+scripts/create-public-client.sh > docker/demo-public-client.json   # prints the client id
+node scripts/demo-rp.mjs <client_id>                              # http://127.0.0.1:5556
+```
+
+It prints the id_token's claims and the userinfo answer; `docs/flow.md` lists what they carry.
+The consent page names the relying party and lists that; Allow is remembered for a month on that
+browser, and "Keep me signed in" on the login page does the same for the login, so the next
+relying party skips both. `prompt=login` from a relying party still asks. A first-party relying
+party can skip the broker's consent page altogether: register it with `--skip-consent`.
+
 ## Tests, image, CI
 
 `dotnet build odin-oidc.sln --warnaserror` and `dotnet test odin-oidc.sln`; the fakes are described
