@@ -19,6 +19,8 @@ public sealed class FakeHydraAdmin
     public bool ClientSkipConsent { get; set; }
     /// <summary>Answer every login call with 410: the challenge was already answered.</summary>
     public bool LoginGone { get; set; }
+    /// <summary>What /health/ready on the admin API says.</summary>
+    public bool Ready { get; set; } = true;
 
     public List<(string challenge, string body)> LoginAccepts { get; } = [];
     public List<(string challenge, string body)> LoginRejects { get; } = [];
@@ -51,6 +53,8 @@ public sealed class FakeHydraAdmin
 
         switch (request.Method.Method, path)
         {
+            case ("GET", "/health/ready"):
+                return Task.FromResult(RecordingHandler.Json(Ready ? HttpStatusCode.OK : HttpStatusCode.ServiceUnavailable, Ready ? """{"status":"ok"}""" : """{"errors":{"database":"down"}}"""));
             case ("GET", "/admin/oauth2/auth/requests/login"):
                 return Task.FromResult(RecordingHandler.Json(HttpStatusCode.OK, JsonSerializer.Serialize(new
                 {
