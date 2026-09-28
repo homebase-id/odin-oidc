@@ -63,9 +63,10 @@ scripts/create-public-client.sh > docker/demo-public-client.json   # prints the 
 node scripts/demo-rp.mjs <client_id>                              # http://127.0.0.1:5556
 ```
 
-It prints the id_token's claims and the userinfo answer. With the `profile` scope those carry
-`name` (from the identity's public profile card), `picture` (its public image),
-`preferred_username` and `website`; the consent page names the relying party and lists exactly
+It prints the id_token's claims and the userinfo answer. They always carry `did` (`did:web:` +
+domain). With the `profile` scope they also carry `name`, `given_name`, `family_name` (from the
+identity's public profile card), `picture` (its public image), `preferred_username`, `website` and
+`profile` (the home page, with its JSON-LD); the consent page names the relying party and lists
 that. "Keep me signed in" on the login page and "Remember this" on the consent page make Hydra
 skip the question for a month on that browser; `prompt=login` from a relying party still asks.
 

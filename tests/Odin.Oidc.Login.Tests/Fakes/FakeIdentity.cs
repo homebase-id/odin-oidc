@@ -21,7 +21,7 @@ public sealed class FakeIdentity
     public string? EchoCipher { get; set; } = "aes-gcm";
     public List<(string path, string? authorization)> Releases { get; } = [];
     /// <summary>The public profile card at /pub/profile; null answers 404, as an identity with no card does.</summary>
-    public string? PublicProfileJson { get; set; } = """{"name":"Frodo Baggins","image":"...","email":[{"type":"main","email":"frodo@dotyou.cloud"}]}""";
+    public string? PublicProfileJson { get; set; } = """{"name":"Frodo Baggins","givenName":"Frodo","familyName":"Baggins","bio":"...","image":"...","email":[{"type":"main","email":"frodo@dotyou.cloud"}]}""";
     public RecordingHandler Handler { get; }
 
     private readonly SensitiveByteArray _pwd = new(RandomNumberGenerator.GetBytes(16));

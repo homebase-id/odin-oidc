@@ -33,7 +33,7 @@ public sealed class ConsentModel(HydraAdminClient hydra, ProfileClaims profileCl
         Grants.Add($"your identity, {Subject}");
         if (scope.Contains(ProfileClaims.ProfileScope))
         {
-            Grants.Add("your public name and picture");
+            Grants.Add("your public name, picture and profile page");
         }
         if (scope.Contains("offline") || scope.Contains("offline_access"))
         {
