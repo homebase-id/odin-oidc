@@ -62,7 +62,7 @@ public class LoginFlowEndpointTests
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Redirect));
         Assert.That(response.Headers.Location!.ToString(), Does.StartWith($"https://{Frodo}/api/owner/v1/youauth/authorize?"), "lower-cased, and the identity's authorize endpoint (YouAuthClientTests pins the query)");
         var setCookie = response.Headers.GetValues("Set-Cookie").Single(c => c.StartsWith($"{LoginFlowCookie.Name}="));
-        Assert.That(setCookie.Length, Is.LessThan(4096), $"a browser drops a cookie over 4096 bytes without a word, and the callback then finds no flow; this one is {setCookie.Length}");
+        Assert.That(setCookie.Length, Is.LessThan(3000), $"a browser drops a cookie over 4096 bytes without a word, and the callback then finds no flow; this one is {setCookie.Length}, with the key as a JWK");
     }
 
     [Test]

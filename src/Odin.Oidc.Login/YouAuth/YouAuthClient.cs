@@ -29,9 +29,9 @@ public sealed class YouAuthClient(IHttpClientFactory httpClientFactory, IOptions
     /// <summary>
     /// YouAuth [010] and [030]: an ephemeral key pair and a random state, and the authorize URL to
     /// send the browser to. What comes back must survive to [090] in the flow cookie: the state to
-    /// match, and the private key in DER form (ECDH needs only that half).
+    /// match, and the key as a private JWK, the library's small portable form of it.
     /// </summary>
-    public (Uri authorizeUrl, string state, string privateKeyDerBase64) Begin(string identity)
+    public (Uri authorizeUrl, string state, string privateKeyJwk) Begin(string identity)
     {
         var broker = options.Value;
         var keyPair = new EccFullKeyData(KeyWrap, EccKeySize.P384, hours: 1);
@@ -51,14 +51,14 @@ public sealed class YouAuthClient(IHttpClientFactory httpClientFactory, IOptions
             ["cipher"] = YouAuthWire.CipherAesGcm,
         };
         var url = new Uri(QueryHelpers.AddQueryString($"https://{identity}{YouAuthWire.AuthorizePath}", query));
-        return (url, state, keyPair.privateDerBase64(KeyWrap));
+        return (url, state, keyPair.PrivateKeyJwk(KeyWrap));
     }
 
     /// <summary>YouAuth [090] to [150]: the exchange secret, the token endpoint, and the opened client access token.</summary>
-    public async Task<byte[]> CompleteAsync(string identity, string privateKeyDerBase64, string identityPublicKeyJwk, string saltBase64, CancellationToken ct)
+    public async Task<byte[]> CompleteAsync(string identity, string privateKeyJwk, string identityPublicKeyJwk, string saltBase64, CancellationToken ct)
     {
         // [090] The same secret the identity derived at [070]: ECDH over P-384, HKDF with the salt.
-        var keyPair = new EccFullKeyData(KeyWrap, Convert.FromBase64String(privateKeyDerBase64));
+        var keyPair = EccFullKeyData.FromJwkPrivateKey(KeyWrap, privateKeyJwk);
         var identityPublicKey = EccPublicKeyData.FromJwkBase64UrlPublicKey(identityPublicKeyJwk);
         var exchangeSecret = keyPair.GetEcdhSharedSecret(KeyWrap, identityPublicKey, Convert.FromBase64String(saltBase64));
         var digest = Convert.ToBase64String(SHA256.HashData(exchangeSecret.GetKey()));

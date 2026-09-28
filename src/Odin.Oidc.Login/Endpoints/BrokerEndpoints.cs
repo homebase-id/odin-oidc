@@ -73,7 +73,7 @@ public static class BrokerEndpoints
         byte[] clientAuthToken;
         try
         {
-            clientAuthToken = await youAuth.CompleteAsync(flow.Identity, flow.PrivateKeyDerBase64, publicKey, salt, ct);
+            clientAuthToken = await youAuth.CompleteAsync(flow.Identity, flow.PrivateKeyJwk, publicKey, salt, ct);
         }
         catch (YouAuthException e)
         {
