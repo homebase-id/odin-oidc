@@ -36,15 +36,16 @@ public sealed class LoginModel(HydraAdminClient hydra, YouAuthClient youAuth, Lo
 
     public async Task<IActionResult> OnGetAsync([FromQuery(Name = "login_challenge")] string? loginChallenge, CancellationToken ct)
     {
-        var request = await hydra.GetLoginRequestAsync(Required(loginChallenge), ct);
+        var challenge = SignInStoppedException.Required(loginChallenge, "login_challenge");
+        var request = await hydra.GetLoginRequestAsync(challenge, ct);
         if (request.Skip && !string.IsNullOrEmpty(request.Subject))
         {
             // Hydra remembers this browser's session; the identity was proven then.
-            return Redirect(await hydra.AcceptLoginAsync(loginChallenge!, new HydraAcceptLogin { Subject = request.Subject }, ct));
+            return Redirect(await hydra.AcceptLoginAsync(challenge, new HydraAcceptLogin { Subject = request.Subject }, ct));
         }
 
         var remembered = Request.Cookies.TryGetValue(RememberedIdentityCookie, out var value) ? value : "";
-        Show(loginChallenge!, request, request.OidcContext?.LoginHint is { Length: > 0 } hint ? hint : remembered);
+        Show(challenge, request, request.OidcContext?.LoginHint is { Length: > 0 } hint ? hint : remembered);
         return Page();
     }
 
@@ -54,12 +55,12 @@ public sealed class LoginModel(HydraAdminClient hydra, YouAuthClient youAuth, Lo
         [FromForm(Name = "remember")] bool remember,
         CancellationToken ct)
     {
-        Required(loginChallenge);
+        var challenge = SignInStoppedException.Required(loginChallenge, "login_challenge");
         var typed = identity?.Trim() ?? "";
         var domain = typed.ToLowerInvariant();
         if (!AsciiDomainNameValidator.TryValidateDomain(domain))
         {
-            Show(loginChallenge!, await hydra.GetLoginRequestAsync(loginChallenge!, ct), typed);
+            Show(challenge, await hydra.GetLoginRequestAsync(challenge, ct), typed);
             Problem = $"'{typed}' is not a domain name. A Homebase identity looks like frodo.dotyou.cloud.";
             return Page();
         }
@@ -68,19 +69,16 @@ public sealed class LoginModel(HydraAdminClient hydra, YouAuthClient youAuth, Lo
 
         // YouAuth [010] and [030]
         var (authorizeUrl, state, privateKey) = youAuth.Begin(domain);
-        cookie.Write(Response, new LoginFlowState(loginChallenge!, domain, state, privateKey, remember));
+        cookie.Write(Response, new LoginFlowState(challenge, domain, state, privateKey, remember));
 
-        logger.LogInformation("Sending the browser to {identity} for Hydra challenge {challenge}", domain, loginChallenge);
+        logger.LogInformation("Sending the browser to {identity} for Hydra challenge {challenge}", domain, challenge);
         return Redirect(authorizeUrl.ToString());
     }
 
     private void Show(string loginChallenge, HydraLoginRequest request, string identity)
     {
         LoginChallenge = loginChallenge;
-        RelyingPartyName = request.Client?.DisplayName ?? "A site";
+        RelyingPartyName = request.Client.DisplayName;
         Identity = identity;
     }
-
-    private static string Required(string? loginChallenge) =>
-        string.IsNullOrEmpty(loginChallenge) ? throw new SignInStoppedException("Missing login_challenge.") : loginChallenge;
 }

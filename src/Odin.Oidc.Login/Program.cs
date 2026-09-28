@@ -17,7 +17,11 @@ builder.Services.AddSingleton<ProfileClaims>();
 builder.Services.AddHttpClient<HydraAdminClient>(http => http.BaseAddress = new Uri(options.HydraAdminUrl));
 
 // Talks to identities; never follows a redirect, since an identity's answer is always a body.
-builder.Services.AddHttpClient(YouAuthClient.HttpClientName, http => http.Timeout = TimeSpan.FromSeconds(10))
+builder.Services.AddHttpClient(YouAuthClient.HttpClientName, http =>
+    {
+        http.Timeout = TimeSpan.FromSeconds(10);
+        http.MaxResponseContentBufferSize = 64 * 1024; // an identity's answers are small; it is a third party
+    })
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
 
 builder.Services.AddDataProtection()

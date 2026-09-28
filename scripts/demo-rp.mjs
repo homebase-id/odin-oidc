@@ -21,10 +21,11 @@ const discovery = await (await fetch(new URL(".well-known/openid-configuration",
 createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${port}`);
   if (url.pathname === "/") {
+    for (const [s, f] of flows) if (Date.now() - f.startedAt > 10 * 60_000) flows.delete(s); // abandoned flows
     const verifier = b64url(randomBytes(32));
     const state = b64url(randomBytes(16));
     const nonce = b64url(randomBytes(16));
-    flows.set(state, { verifier, nonce });
+    flows.set(state, { verifier, nonce, startedAt: Date.now() });
     const auth = new URL(discovery.authorization_endpoint);
     auth.search = new URLSearchParams({
       client_id: clientId, response_type: "code", scope: "openid offline profile",

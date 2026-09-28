@@ -63,12 +63,11 @@ scripts/create-public-client.sh > docker/demo-public-client.json   # prints the 
 node scripts/demo-rp.mjs <client_id>                              # http://127.0.0.1:5556
 ```
 
-It prints the id_token's claims and the userinfo answer. They always carry `did` (`did:web:` +
-domain). With the `profile` scope they also carry `name`, `given_name`, `family_name` (from the
-identity's public profile card), `picture` (its public image), `preferred_username`, `website` and
-`profile` (the home page, with its JSON-LD); the consent page names the relying party and lists
-that. "Keep me signed in" on the login page and "Remember this" on the consent page make Hydra
-skip the question for a month on that browser; `prompt=login` from a relying party still asks.
+It prints the id_token's claims and the userinfo answer; `docs/flow.md` lists what they carry.
+The consent page names the relying party and lists that; Allow is remembered for a month on that
+browser, and "Keep me signed in" on the login page does the same for the login, so the next
+relying party skips both. `prompt=login` from a relying party still asks. A first-party relying
+party can skip the broker's consent page altogether: register it with `--skip-consent`.
 
 ## Tests, image, CI
 

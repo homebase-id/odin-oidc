@@ -1,5 +1,4 @@
 using System.Net;
-using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.WebUtilities;
 using Odin.Oidc.Login.Flow;
 using Odin.Oidc.Login.Pages;
@@ -15,14 +14,13 @@ namespace Odin.Oidc.Login.Tests;
 [TestFixture]
 public class LoginFlowEndpointTests
 {
-    private const string Frodo = "frodo.dotyou.cloud";
+    private const string Frodo = BrokerApp.Frodo;
 
     [Test]
     public async Task ALoginHydraAlreadyKnowsIsAcceptedWithoutAsking()
     {
         using var app = new BrokerApp();
         app.Hydra.LoginSkip = true;
-        app.Hydra.LoginSubject = Frodo;
         using var browser = app.CreateClient();
 
         var response = await browser.GetAsync("/login?login_challenge=ch1");
@@ -233,19 +231,12 @@ public class LoginFlowEndpointTests
         var page = await browser.GetAsync($"/login?login_challenge={challenge}");
         var html = await page.Content.ReadAsStringAsync();
         Assert.That(page.StatusCode, Is.EqualTo(HttpStatusCode.OK), html);
-        var token = Regex.Match(html, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
-        Assert.That(token, Is.Not.Empty, "the login form carries an antiforgery token");
 
-        var form = new Dictionary<string, string>
-        {
-            ["__RequestVerificationToken"] = token,
-            ["login_challenge"] = challenge,
-            ["identity"] = identity,
-        };
+        var form = new Dictionary<string, string> { ["login_challenge"] = challenge, ["identity"] = identity };
         if (remember)
         {
             form["remember"] = "true";
         }
-        return await browser.PostAsync("/login", new FormUrlEncodedContent(form));
+        return await BrokerApp.PostFormAsync(browser, "/login", html, form);
     }
 }

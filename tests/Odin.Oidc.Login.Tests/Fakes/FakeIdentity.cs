@@ -24,6 +24,9 @@ public sealed class FakeIdentity
     public string? PublicProfileJson { get; set; } = """{"name":"Frodo Baggins","givenName":"Frodo","familyName":"Baggins","bio":"...","image":"...","email":[{"type":"main","email":"frodo@dotyou.cloud"}]}""";
     public RecordingHandler Handler { get; }
 
+    /// <summary>An IHttpClientFactory whose every client talks to this identity.</summary>
+    public IHttpClientFactory ClientFactory => new SingleClientFactory(Handler);
+
     private readonly SensitiveByteArray _pwd = new(RandomNumberGenerator.GetBytes(16));
     private readonly EccFullKeyData _keyPair;
     private SensitiveByteArray? _exchangeSecret;
@@ -97,6 +100,11 @@ public sealed class FakeIdentity
             default:
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent($"fake identity: {request.Method} {request.RequestUri.AbsolutePath}") });
         }
+    }
+
+    private sealed class SingleClientFactory(HttpMessageHandler handler) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
     }
 
     private (byte[] iv, byte[] cipherText) Seal(byte[] plain) => SealWith == "aes-gcm"

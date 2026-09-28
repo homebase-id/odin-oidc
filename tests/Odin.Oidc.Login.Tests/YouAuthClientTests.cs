@@ -13,12 +13,12 @@ namespace Odin.Oidc.Login.Tests;
 [TestFixture]
 public class YouAuthClientTests
 {
-    private const string Frodo = "frodo.dotyou.cloud";
+    private const string Frodo = BrokerApp.Frodo;
 
     private static YouAuthClient Client(FakeIdentity identity, string publicOrigin = "https://oidc.example.org")
     {
         var options = new BrokerOptions { PublicOrigin = publicOrigin };
-        return new YouAuthClient(new SingleClientFactory(identity.Handler), Microsoft.Extensions.Options.Options.Create(options), NullLogger<YouAuthClient>.Instance);
+        return new YouAuthClient(identity.ClientFactory, Microsoft.Extensions.Options.Options.Create(options), NullLogger<YouAuthClient>.Instance);
     }
 
     [Test]
@@ -96,10 +96,5 @@ public class YouAuthClientTests
         var identity = new FakeIdentity("nobody.example.org");
         Assert.That(() => Client(identity).ReleaseAsync(Frodo, new byte[33], CancellationToken.None), Throws.Nothing,
             "the identity is already proven; a failed cleanup is logged, not surfaced");
-    }
-
-    private sealed class SingleClientFactory(HttpMessageHandler handler) : IHttpClientFactory
-    {
-        public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
     }
 }
