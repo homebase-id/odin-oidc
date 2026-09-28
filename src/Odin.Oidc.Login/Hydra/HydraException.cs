@@ -5,7 +5,8 @@ public sealed class HydraException(string message) : Exception(message);
 
 /// <summary>
 /// The challenge was already answered (HTTP 410), typically the browser going back to a page it had
-/// left. Hydra says where the browser should be; the exception handler sends it there.
+/// left. Hydra names a redirect, but it re-presents a verifier that is spent, so the Error page
+/// tells the person instead.
 /// </summary>
 public sealed class HydraAlreadyAnsweredException(string redirectTo) : Exception("Hydra already answered this challenge")
 {

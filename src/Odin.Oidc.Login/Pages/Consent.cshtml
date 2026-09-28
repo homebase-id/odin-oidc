@@ -3,8 +3,8 @@
 @{
     ViewData["Title"] = "Approve";
 }
-<h1>Let <strong>@Model.RelyingPartyName</strong> know who you are?</h1>
-<p>You are signed in as <strong>@Model.Subject</strong>. If you allow it, this site learns:</p>
+<h1>Sign in to <strong>@Model.RelyingPartyName</strong> as <strong>@Model.Subject</strong>?</h1>
+<p>If you allow it, this site learns:</p>
 <ul class="grants">
     @foreach (var grant in Model.Grants)
     {
@@ -19,4 +19,4 @@
         <button type="submit" name="allow" value="no" class="secondary">Deny</button>
     </div>
 </form>
-<p class="muted">Your identity itself asked you once already, for "Homebase Sign-in"; this is about this site in particular.</p>
+<p class="muted">Your identity has confirmed who you are to Homebase Sign-in. This question is about what this particular site may know.</p>

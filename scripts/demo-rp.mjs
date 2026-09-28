@@ -37,7 +37,8 @@ createServer(async (req, res) => {
   }
   if (url.pathname === "/callback") {
     const flow = flows.get(url.searchParams.get("state"));
-    if (!flow) { res.writeHead(400); res.end("unknown state"); return; }
+    if (!flow) { res.writeHead(400, { "content-type": "text/html" }); res.end(`<p>This sign-in is not one in progress (the browser went back?). <a href="/">Start again</a></p>`); return; }
+    flows.delete(url.searchParams.get("state")); // one callback per flow; a code is single-use anyway
     if (url.searchParams.get("error")) {
       res.writeHead(200, { "content-type": "text/plain" });
       res.end(`sign-in refused: ${url.searchParams.get("error")}: ${url.searchParams.get("error_description") ?? ""}`);

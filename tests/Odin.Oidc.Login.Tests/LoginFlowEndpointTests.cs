@@ -189,7 +189,7 @@ public class LoginFlowEndpointTests
     }
 
     [Test]
-    public async Task AChallengeHydraAlreadyAnsweredSendsTheBrowserOn()
+    public async Task AChallengeHydraAlreadyAnsweredIsSaidSoInWords()
     {
         using var app = new BrokerApp();
         app.Hydra.LoginGone = true;
@@ -197,8 +197,9 @@ public class LoginFlowEndpointTests
 
         var response = await browser.GetAsync("/login?login_challenge=used");
 
-        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Redirect), "the browser went back to a page it had left; Hydra says where it should be");
-        Assert.That(response.Headers.Location!.ToString(), Is.EqualTo(FakeHydraAdmin.RedirectTo));
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Gone), "the browser went back to a page it had left");
+        Assert.That(await response.Content.ReadAsStringAsync(), Does.Contain("already completed"),
+            "not Hydra's redirect: that re-presents a spent verifier and ends in Hydra's error page");
     }
 
     [Test]
