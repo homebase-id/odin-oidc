@@ -1,39 +1,73 @@
-# Ory Hydra with Postgres, for development. The shape of Hydra's own quickstart-postgres.yml.
-# Ports: Hydra public 4444 -> host 14444, admin 4445 -> host 14445 (odin-core's dev host owns 4444);
-# The CLI demo relying party (scripts/run-demo-rp.sh) runs on the host network on 5555.
-# `--dev` disables Hydra's production checks (allows http redirect URIs, non-Secure cookies);
-# compose.prod.yml overrides it away.
+# The broker: Ory Hydra with Postgres, and the login app. This file is the production shape and
+# publishes no ports: put your TLS proxy on the `oidc` network and route as docs/production.md says
+# (Hydra public API on hydra:4444 for /.well-known/*, /oauth2/*, /userinfo; everything else to
+# login:8080; never hydra:4445, the admin API). Development adds compose.dev.yml on top, which
+# docker/.env selects through COMPOSE_FILE.
 name: odin-oidc
+
+x-hardened: &hardened
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  pids_limit: 256
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "5"
+  restart: unless-stopped
 
 services:
   postgres:
-    image: postgres:16
+    <<: *hardened
+    image: ${POSTGRES_IMAGE:-postgres@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54} # postgres:16
     environment:
       POSTGRES_DB: hydra
       POSTGRES_USER: hydra
       POSTGRES_PASSWORD: ${HYDRA_DB_PASSWORD:?set in docker/.env}
     volumes:
       - hydra-pgdata:/var/lib/postgresql/data
+    tmpfs:
+      - /run/postgresql
+      - /tmp
+    read_only: true
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+      - FOWNER
+    mem_limit: 512m
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U hydra -d hydra"]
       interval: 5s
       timeout: 5s
       retries: 20
-    restart: unless-stopped
+    networks:
+      - oidc
 
   hydra-migrate:
-    image: oryd/hydra:v26.2.0
+    <<: *hardened
+    image: ${HYDRA_IMAGE:-oryd/hydra@sha256:ff67c7fb5f95074fa53374d41151713554960504b340cd3f95b09e65deaea2a9} # oryd/hydra:v26.2.0
     command: migrate sql up -e --yes
     environment:
       DSN: postgres://hydra:${HYDRA_DB_PASSWORD}@postgres:5432/hydra?sslmode=disable&max_conns=20&max_idle_conns=4
+    read_only: true
+    tmpfs:
+      - /tmp
+    mem_limit: 256m
     depends_on:
       postgres:
         condition: service_healthy
     restart: on-failure
+    networks:
+      - oidc
 
   hydra:
-    image: oryd/hydra:v26.2.0
-    command: serve all --dev --config /etc/config/hydra/hydra.yml
+    <<: *hardened
+    image: ${HYDRA_IMAGE:-oryd/hydra@sha256:ff67c7fb5f95074fa53374d41151713554960504b340cd3f95b09e65deaea2a9} # oryd/hydra:v26.2.0
+    command: serve all --config /etc/config/hydra/hydra.yml --sqa-opt-out
     environment:
       DSN: postgres://hydra:${HYDRA_DB_PASSWORD}@postgres:5432/hydra?sslmode=disable&max_conns=20&max_idle_conns=4
       SECRETS_SYSTEM: ${HYDRA_SECRETS_SYSTEM:?set in docker/.env}
@@ -41,15 +75,47 @@ services:
       URLS_LOGIN: ${LOGIN_APP_URL:?set in docker/.env}/login
       URLS_CONSENT: ${LOGIN_APP_URL}/consent
       URLS_LOGOUT: ${LOGIN_APP_URL}/logout
+      # Requests arrive over plain http from the proxy on the oidc network, which terminated TLS.
+      SERVE_TLS_ALLOW_TERMINATION_FROM: ${OIDC_NETWORK:-172.30.0.0/24}
     volumes:
       - ./hydra:/etc/config/hydra:ro
-    ports:
-      - "14444:4444" # public: /.well-known/openid-configuration, /oauth2/*
-      - "14445:4445" # admin: /admin/* -- never expose beyond localhost
+    read_only: true
+    tmpfs:
+      - /tmp
+    mem_limit: 512m
     depends_on:
       hydra-migrate:
         condition: service_completed_successfully
-    restart: unless-stopped
+    networks:
+      - oidc
+
+  login:
+    <<: *hardened
+    image: ${LOGIN_IMAGE:-ghcr.io/homebase-id/odin-oidc-login:latest}
+    environment:
+      Broker__PublicOrigin: ${LOGIN_APP_URL}
+      Broker__ClientName: ${BROKER_CLIENT_NAME:-Homebase Sign-in}
+      Broker__HydraAdminUrl: http://hydra:4445/
+      Broker__KeyRingPath: /keys
+      Broker__TrustedProxyNetworks__0: ${OIDC_NETWORK:-172.30.0.0/24}
+    volumes:
+      - login-keys:/keys
+    read_only: true
+    tmpfs:
+      - /tmp
+    mem_limit: 256m
+    depends_on:
+      - hydra
+    networks:
+      - oidc
 
 volumes:
   hydra-pgdata:
+  login-keys:
+
+networks:
+  oidc:
+    # A fixed subnet, so SERVE_TLS_ALLOW_TERMINATION_FROM and Broker__TrustedProxyNetworks are known.
+    ipam:
+      config:
+        - subnet: ${OIDC_NETWORK:-172.30.0.0/24}

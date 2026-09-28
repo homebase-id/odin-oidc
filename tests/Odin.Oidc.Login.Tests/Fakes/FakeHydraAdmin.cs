@@ -19,6 +19,8 @@ public sealed class FakeHydraAdmin
     public bool ClientSkipConsent { get; set; }
     /// <summary>Answer every login call with 410: the challenge was already answered.</summary>
     public bool LoginGone { get; set; }
+    /// <summary>Answer every login call with 404: no such challenge.</summary>
+    public bool LoginUnknown { get; set; }
     /// <summary>What /health/ready on the admin API says.</summary>
     public bool Ready { get; set; } = true;
 
@@ -46,6 +48,10 @@ public sealed class FakeHydraAdmin
         HttpResponseMessage Redirect() => RecordingHandler.Json(HttpStatusCode.OK, JsonSerializer.Serialize(new { redirect_to = RedirectTo }));
         var client = new { client_id = "rp", client_name = "Demo relying party", skip_consent = ClientSkipConsent };
 
+        if (LoginUnknown && path.StartsWith("/admin/oauth2/auth/requests/login"))
+        {
+            return Task.FromResult(RecordingHandler.Json(HttpStatusCode.NotFound, JsonSerializer.Serialize(new { error = "Not Found", error_description = "Unable to locate the requested resource" })));
+        }
         if (LoginGone && path.StartsWith("/admin/oauth2/auth/requests/login"))
         {
             return Task.FromResult(RecordingHandler.Json(HttpStatusCode.Gone, JsonSerializer.Serialize(new { error = "already_handled", redirect_to = RedirectTo })));

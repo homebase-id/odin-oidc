@@ -38,3 +38,25 @@ jobs:
 
       - name: Docker image builds
         run: docker build --build-arg ODIN_CORE_SHA=${{ steps.core.outputs.sha }} -t odin-oidc-login odin-oidc
+
+      - name: The image runs unprivileged, read-only, with no capabilities
+        run: |
+          set -eu
+          uid=$(docker run --rm --entrypoint id odin-oidc-login -u)
+          [ "$uid" = "1654" ] || { echo "runs as uid $uid, not the app user"; exit 1; }
+          cid=$(docker run -d --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true \
+                -e Broker__PublicOrigin=https://oidc.example.org -e Broker__HydraAdminUrl=http://127.0.0.1:1/ odin-oidc-login)
+          for i in $(seq 1 30); do docker logs "$cid" 2>&1 | grep -q "Now listening" && break; sleep 1; done
+          docker logs "$cid" 2>&1 | grep -q "Now listening" || { docker logs "$cid"; docker rm -f "$cid"; exit 1; }
+          docker rm -f "$cid" >/dev/null
+
+      - name: The production compose publishes no port and runs Hydra without --dev
+        working-directory: odin-oidc/docker
+        run: |
+          set -eu
+          rendered=$(HYDRA_DB_PASSWORD=x HYDRA_SECRETS_SYSTEM=y HYDRA_ISSUER=https://oidc.example.org/ LOGIN_APP_URL=https://oidc.example.org \
+                     docker compose -f compose.yml config)
+          echo "$rendered" | grep -q "published" && { echo "compose.yml publishes a port"; exit 1; }
+          echo "$rendered" | grep -q -- "--dev" && { echo "compose.yml runs Hydra with --dev"; exit 1; }
+          echo "$rendered" | grep -q "no-new-privileges" || { echo "compose.yml lost its hardening"; exit 1; }
+          echo "production compose: no ports, no --dev, hardened"

@@ -81,6 +81,22 @@ public class HardeningTests
         Assert.That(html, Does.Contain("site.css"));
     }
 
+    [TestCase("/youauth/callback?state=x", HttpStatusCode.BadRequest)]
+    [TestCase("/login?login_challenge=unknown", HttpStatusCode.InternalServerError)]
+    public async Task TheErrorPageCarriesTheSameHeaders(string path, HttpStatusCode expected)
+    {
+        using var app = new BrokerApp();
+        app.Hydra.LoginUnknown = true;
+        using var browser = app.CreateClient();
+
+        var response = await browser.GetAsync(path);
+
+        Assert.That(response.StatusCode, Is.EqualTo(expected));
+        Assert.That(response.Headers.GetValues("Content-Security-Policy").Single(), Does.Contain("frame-ancestors 'none'"),
+            "the exception handler rebuilds the response; the headers must be set on the rebuilt one too");
+        Assert.That(response.Headers.GetValues("Strict-Transport-Security").Single(), Does.Contain("max-age"));
+    }
+
     // ---------------------------------------------------------------------------------------
     // How much one address may do
     // ---------------------------------------------------------------------------------------

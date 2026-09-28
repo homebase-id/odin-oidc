@@ -74,9 +74,10 @@ if (options.TrustedProxyNetworks.Count > 0)
     // enabling it once a proxy is named is what makes "trust nobody" the default.
     app.UseForwardedHeaders();
 }
-app.UseSecurityHeaders();
 app.UseExceptionHandler(SignInOutcomeMiddleware.ErrorPath);
 app.UseMiddleware<SignInOutcomeMiddleware>();
+// After the two handlers, so a response they rebuild for the Error page gets the headers again.
+app.UseSecurityHeaders();
 app.UseStaticFiles();
 // Routing after the outcome middleware, so a re-executed request is routed to the Error page.
 app.UseRouting();
