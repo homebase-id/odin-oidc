@@ -77,6 +77,25 @@ services:
       hydra-migrate:
         condition: service_completed_successfully
 
+  # Expiry does not delete: Hydra keeps expired flows, codes and tokens until its janitor removes
+  # them. Once a day, everything past its lifetime plus a grace period, in batches.
+  hydra-janitor:
+    <<: *hardened
+    image: *hydra-image
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          hydra janitor -e --tokens --requests --grants --keep-if-younger 30h --batch-size 500 --limit 100000
+          sleep 86400
+        done
+    environment:
+      DSN: *hydra-dsn
+    mem_limit: 128m
+    depends_on:
+      hydra-migrate:
+        condition: service_completed_successfully
+
   login:
     <<: *hardened
     # A tag or digest from the publish workflow (ghcr.io/homebase-id/odin-oidc-login:vX.Y.Z), set in

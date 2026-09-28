@@ -71,4 +71,5 @@ jobs:
           echo "$rendered" | grep -q "published" && { echo "compose.yml publishes a port"; exit 1; }
           echo "$rendered" | grep -q -- "--dev" && { echo "compose.yml runs Hydra with --dev"; exit 1; }
           echo "$rendered" | grep -q "no-new-privileges" || { echo "compose.yml lost its hardening"; exit 1; }
-          echo "production compose: no ports, no --dev, hardened"
+          echo "$rendered" | grep -q "hydra janitor" || { echo "compose.yml lost the janitor; expired rows would accumulate for ever"; exit 1; }
+          echo "production compose: no ports, no --dev, hardened, janitor present"

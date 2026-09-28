@@ -70,6 +70,17 @@ A backup counts only once restored and read back. Monthly, on a scratch host: st
 Postgres, restore the dump, start a throwaway Hydra with the same `SECRETS_SYSTEM` against it, and
 `hydra list clients --endpoint http://127.0.0.1:4445` must list the relying parties.
 
+## What a login leaves behind, and for how long
+
+Every sign-in is a row in Hydra's flow table plus its codes and tokens. They are referenced for as
+long as anything points at them: the challenge for 30 minutes, the access and id tokens for an
+hour, a refresh token (`offline` scope) for 30 days and renewed on use, a remembered login or
+consent for 30 days. Expiry does not delete: the `hydra-janitor` service in the compose runs
+Hydra's janitor once a day and removes what is past its lifetime plus a 30-hour grace period, in
+batches, so the tables stay bounded at roughly a month of logins. Shorten the month with
+`Remembered.ForSeconds` in the app and `ttl.refresh_token` in `hydra.yml` if that is too long a
+record of who signed in where.
+
 ## Rotations
 
 **Signing keys.** Hydra signs id_tokens with the `hydra.openid.id-token` key set. Adding a key
