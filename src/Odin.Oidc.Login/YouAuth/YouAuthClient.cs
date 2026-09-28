@@ -68,16 +68,16 @@ public sealed class YouAuthClient(IHttpClientFactory httpClientFactory, IOptions
         using var response = await http.PostAsJsonAsync($"https://{identity}{YouAuthWire.TokenPath}", new YouAuthTokenRequest { SecretDigest = digest }, ct);
         if (!response.IsSuccessStatusCode)
         {
-            throw new YouAuthException($"{identity} answered the token exchange with {(int)response.StatusCode}");
+            throw new YouAuthException($"The identity answered the token exchange with {(int)response.StatusCode}");
         }
         var token = await response.Content.ReadFromJsonAsync<YouAuthTokenResponse>(ct)
-                    ?? throw new YouAuthException($"{identity} answered the token exchange with an empty body");
+                    ?? throw new YouAuthException("The identity answered the token exchange with an empty body");
 
         // [150] The proof, sealed with what was asked for at [030]. An identity that seals with
         // anything else, or says nothing, predates the choice; there are none this app should meet.
         if (token.Cipher != YouAuthWire.CipherAesGcm)
         {
-            throw new YouAuthException($"{identity} sealed the token with '{token.Cipher}'; this app asked for {YouAuthWire.CipherAesGcm}");
+            throw new YouAuthException($"The identity sealed the token with '{token.Cipher}'; this app asked for {YouAuthWire.CipherAesGcm}");
         }
 
         byte[] clientAuthToken;
@@ -91,12 +91,12 @@ public sealed class YouAuthClient(IHttpClientFactory httpClientFactory, IOptions
         }
         catch (Exception e) when (e is CryptographicException or ArgumentException or FormatException)
         {
-            throw new YouAuthException($"Could not open the token {identity} sent", e);
+            throw new YouAuthException("Could not open the token the identity sent", e);
         }
 
         if (clientAuthToken.Length != ClientAuthTokenLength)
         {
-            throw new YouAuthException($"The token {identity} sent is {clientAuthToken.Length} bytes, not {ClientAuthTokenLength}");
+            throw new YouAuthException($"The token the identity sent is {clientAuthToken.Length} bytes, not {ClientAuthTokenLength}");
         }
         return clientAuthToken;
     }

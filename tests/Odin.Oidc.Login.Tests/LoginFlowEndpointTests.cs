@@ -190,7 +190,7 @@ public class LoginFlowEndpointTests
     public async Task AChallengeHydraAlreadyAnsweredIsSaidSoInWords()
     {
         using var app = new BrokerApp();
-        app.Hydra.LoginGone = true;
+        app.Hydra.LoginAnswer = HttpStatusCode.Gone;
         using var browser = app.CreateClient();
 
         var response = await browser.GetAsync("/login?login_challenge=used");

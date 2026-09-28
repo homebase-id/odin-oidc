@@ -17,10 +17,8 @@ public sealed class FakeHydraAdmin
     public List<string> RequestedScope { get; set; } = ["openid", "offline"];
     public bool ConsentSkip { get; set; }
     public bool ClientSkipConsent { get; set; }
-    /// <summary>Answer every login call with 410: the challenge was already answered.</summary>
-    public bool LoginGone { get; set; }
-    /// <summary>Answer every login call with 404: no such challenge.</summary>
-    public bool LoginUnknown { get; set; }
+    /// <summary>Answer every login call with this status instead: 410 (already answered) or 404 (no such challenge).</summary>
+    public HttpStatusCode? LoginAnswer { get; set; }
     /// <summary>What /health/ready on the admin API says.</summary>
     public bool Ready { get; set; } = true;
 
@@ -48,13 +46,9 @@ public sealed class FakeHydraAdmin
         HttpResponseMessage Redirect() => RecordingHandler.Json(HttpStatusCode.OK, JsonSerializer.Serialize(new { redirect_to = RedirectTo }));
         var client = new { client_id = "rp", client_name = "Demo relying party", skip_consent = ClientSkipConsent };
 
-        if (LoginUnknown && path.StartsWith("/admin/oauth2/auth/requests/login"))
+        if (LoginAnswer is { } status && path.StartsWith("/admin/oauth2/auth/requests/login"))
         {
-            return Task.FromResult(RecordingHandler.Json(HttpStatusCode.NotFound, JsonSerializer.Serialize(new { error = "Not Found", error_description = "Unable to locate the requested resource" })));
-        }
-        if (LoginGone && path.StartsWith("/admin/oauth2/auth/requests/login"))
-        {
-            return Task.FromResult(RecordingHandler.Json(HttpStatusCode.Gone, JsonSerializer.Serialize(new { error = "already_handled", redirect_to = RedirectTo })));
+            return Task.FromResult(RecordingHandler.Json(status, JsonSerializer.Serialize(new { error = status.ToString(), redirect_to = RedirectTo })));
         }
 
         switch (request.Method.Method, path)

@@ -13,6 +13,6 @@ services:
       - "14445:4445" # admin: /admin/* -- never expose beyond localhost
 
   login:
-    # Not run in development; see the README.
+    # Not run in development (the app runs from `dotnet run` on the host); `--profile login` runs a local build.
     profiles:
-      - container
+      - login

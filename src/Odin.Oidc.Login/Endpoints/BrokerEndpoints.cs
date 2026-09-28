@@ -18,7 +18,7 @@ public static class BrokerEndpoints
 {
     public static void MapBrokerEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/youauth/callback", YouAuthCallback).RequireRateLimiting(RateLimits.FormPosts);
+        app.MapGet("/youauth/callback", YouAuthCallback).RequireRateLimiting(FormPostLimiter.Policy);
         app.MapGet("/logout", Logout);
         app.MapGet("/.well-known/youauth-client.json", ClientDocument);
         app.MapGet("/healthz", Health);
@@ -78,7 +78,7 @@ public static class BrokerEndpoints
         }
         catch (YouAuthException e)
         {
-            logger.LogWarning("YouAuth: the token exchange with the identity failed: {reason}", e.Message.Replace(flow.Identity, "the identity"));
+            logger.LogWarning("YouAuth: the token exchange with the identity failed: {reason}", e.Message);
             logger.LogDebug(e, "YouAuth: the exchange with {identity} failed", flow.Identity);
             var redirect = await hydra.RejectLoginAsync(flow.LoginChallenge, new HydraReject
             {

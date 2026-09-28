@@ -27,7 +27,7 @@ One worked example, Caddy, on the `oidc` network:
 ```
 oidc.example.org {
     header Strict-Transport-Security "max-age=31536000; includeSubDomains"
-    request_body { max_size 64KB }
+    request_body { max_size 64KB }   # a coarse first cut; the app's own limit, 16 KB, is the real one
     handle /.well-known/openid-configuration { reverse_proxy hydra:4444 }
     handle /.well-known/jwks.json           { reverse_proxy hydra:4444 }
     handle /oauth2/*                        { reverse_proxy hydra:4444 }
@@ -91,38 +91,24 @@ first on production.
 
 ## Relying parties
 
-Registration is by hand, on the host, through the admin API. Redirect URIs are the allowlist:
-https only, matched exactly.
-
-```bash
-# a browser or native app: public client, PKCE
-docker compose exec hydra hydra create client --endpoint http://127.0.0.1:4445 --format json \
-  --name "Example app" --grant-type authorization_code,refresh_token --response-type code \
-  --scope openid,offline,profile --redirect-uri https://app.example.org/callback \
-  --token-endpoint-auth-method none
-
-# a server-side application: confidential client; add --skip-consent for a first-party one
-docker compose exec hydra hydra create client --endpoint http://127.0.0.1:4445 --format json \
-  --name "Example forum" --grant-type authorization_code,refresh_token --response-type code \
-  --scope openid,offline,profile --redirect-uri https://forum.example.org/auth/callback \
-  --token-endpoint-auth-method client_secret_basic --skip-consent
-```
-
-`--skip-consent` skips the broker's consent page for that client; the owner still approves the
-sign-in at their own identity. Keep a list of registered clients (name, id, redirect URIs, skip
-consent) with your deployment.
+Registration is by hand, on the host, through the admin API: `scripts/create-public-client.sh`
+(a browser or native app, PKCE) and `scripts/create-test-client.sh` (a server-side application
+with a secret) are the two shapes; for production change the name and the redirect URI, which is
+the allowlist (https only, matched exactly), and add `--skip-consent` for a first-party relying
+party so the broker's consent page is skipped; the owner still approves the sign-in at their own
+identity. Keep a list of registered clients (name, id, redirect URIs, skip consent) with your
+deployment.
 
 ## Logging
 
-At Information the login app records events without identity domains: a domain is the sensitive
-datum. Debug names them, for an incident. Hydra logs at info with `leak_sensitive_values: false`.
-Container logs rotate (json-file, 10 MB x 5); a host may set another driver.
+At Information the login app names no identity domain; Debug does, for an incident. Container
+logs rotate (json-file, 10 MB x 5); a host may set another driver.
 
 ## Health
 
-`GET /healthz` is 200 only when the login app answers and Hydra reports ready on its admin API.
-Probe it, and `/.well-known/openid-configuration`, from outside. `/healthz` is served by the login
-app, so it goes through the proxy like everything else.
+`GET /healthz` is 200 only when the login app answers and Hydra reports ready on its admin API: a
+readiness answer for a smoke test or an uptime probe from outside, not a liveness probe to
+restart the container on. Probe `/.well-known/openid-configuration` too.
 
 ## Go-live checklist
 

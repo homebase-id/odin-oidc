@@ -13,7 +13,7 @@ namespace Odin.Oidc.Login.Pages;
 /// Hydra remembers, or a client Hydra trusts (registered with skip consent, for first parties), is
 /// accepted without asking. The claims are read fresh from the identity every time.
 /// </summary>
-[EnableRateLimiting(RateLimits.FormPosts)]
+[EnableRateLimiting(FormPostLimiter.Policy)]
 public sealed class ConsentModel(HydraAdminClient hydra, ProfileClaims profileClaims) : PageModel
 {
     public string ConsentChallenge { get; private set; } = "";

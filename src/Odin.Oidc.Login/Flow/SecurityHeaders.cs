@@ -1,9 +1,10 @@
 namespace Odin.Oidc.Login.Flow;
 
 /// <summary>
-/// What every answer tells the browser, set here rather than at the proxy so it holds behind any
-/// proxy: no framing, no scripts or styles but this origin's own file, no referrer, no sniffing,
-/// nothing cached, and HSTS once the request is known to be https.
+/// What every answer tells the browser about content, set here rather than at the proxy so it
+/// holds behind any proxy: no framing, no scripts or styles but this origin's own file, no
+/// referrer, no sniffing, nothing cached unless the endpoint says so (the client document and the
+/// stylesheet do). HSTS is the framework's <c>UseHsts</c>, next to this in Program.cs.
 /// </summary>
 public static class SecurityHeaders
 {
@@ -17,16 +18,6 @@ public static class SecurityHeaders
         headers["Referrer-Policy"] = "no-referrer";
         headers["X-Frame-Options"] = "DENY";
         headers.CacheControl = "no-store";
-        if (context.Request.IsHttps)
-        {
-            headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
-        }
         await next(context);
     });
-}
-
-/// <summary>Named rate-limit policies; the numbers are BrokerOptions'.</summary>
-public static class RateLimits
-{
-    public const string FormPosts = "form-posts";
 }

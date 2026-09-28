@@ -29,7 +29,7 @@ public sealed class BrokerOptions
     /// </summary>
     public List<string> TrustedProxyNetworks { get; set; } = [];
 
-    /// <summary>Form posts and callbacks one client address may make per minute before it is told to slow down.</summary>
+    /// <summary>Requests to the login and consent pages and the callback one client address may make per minute before it is told to slow down; a sign-in takes about five.</summary>
     public int FormPostsPerMinute { get; set; } = 20;
 
     public string PublicHost => new Uri(PublicOrigin).Host;
