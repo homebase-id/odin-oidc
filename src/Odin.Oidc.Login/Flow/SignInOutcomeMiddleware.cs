@@ -21,7 +21,7 @@ public sealed class SignInOutcomeMiddleware(RequestDelegate next, ILogger<SignIn
         }
         catch (Exception e) when (e is SignInStoppedException or HydraAlreadyAnsweredException && !context.Response.HasStarted)
         {
-            logger.LogInformation("{path}: {outcome}", context.Request.Path, e.Message);
+            logger.LogInformation("{path}: {outcome}", context.Request.Path, e.GetType().Name);
 
             // Re-execute the pipeline at the Error page, the way ExceptionHandlerMiddleware does.
             context.Response.Clear();

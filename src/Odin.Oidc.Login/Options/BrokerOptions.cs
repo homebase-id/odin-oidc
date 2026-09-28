@@ -23,6 +23,15 @@ public sealed class BrokerOptions
     /// <summary>How long the owner has to sign in and consent at their identity before the flow cookie expires.</summary>
     public TimeSpan FlowLifetime { get; set; } = TimeSpan.FromMinutes(10);
 
+    /// <summary>
+    /// Networks (CIDR) whose X-Forwarded-For/Proto/Host headers are believed: the TLS proxy in front
+    /// of this app. Empty, the default, believes nobody, and the app then sees every request as http.
+    /// </summary>
+    public List<string> TrustedProxyNetworks { get; set; } = [];
+
+    /// <summary>Form posts and callbacks one client address may make per minute before it is told to slow down.</summary>
+    public int FormPostsPerMinute { get; set; } = 20;
+
     public string PublicHost => new Uri(PublicOrigin).Host;
     public string CallbackUri => $"{PublicOrigin.TrimEnd('/')}/youauth/callback";
 }

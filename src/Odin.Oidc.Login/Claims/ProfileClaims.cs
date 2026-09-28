@@ -67,7 +67,8 @@ public sealed class ProfileClaims(IHttpClientFactory httpClientFactory, ILogger<
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException)
         {
-            logger.LogWarning(e, "Could not read {identity}'s public profile; the relying party gets no name", identity);
+            logger.LogWarning("Could not read the identity's public profile ({reason}); the relying party gets no name", e.GetType().Name);
+            logger.LogDebug(e, "The identity was {identity}", identity);
         }
     }
 }

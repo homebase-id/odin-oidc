@@ -4,7 +4,7 @@ An OpenID Connect broker for Homebase identities: any software that speaks OIDC 
 "Sign in with Homebase". The issuer is [Ory Hydra](https://github.com/ory/hydra), unmodified;
 the login-and-consent app in `src/Odin.Oidc.Login` is ours, and it proves who the user is with
 the YouAuth flow against the user's own identity server. The OIDC subject is the identity's
-domain. See `docs/flow.md` for the sequence and for what is stored where.
+domain. See `docs/flow.md` for the sequence and for what is stored where, and `docs/production.md` for running it.
 
 ## Running locally
 
@@ -17,12 +17,14 @@ against).
 
 ```bash
 cp docker/.env.example docker/.env      # then set HYDRA_SECRETS_SYSTEM to 32+ random characters
-docker compose -f docker/compose.yml up -d
+cd docker && docker compose up -d       # .env's COMPOSE_FILE adds compose.dev.yml: --dev, ports, debug
 curl http://127.0.0.1:14444/.well-known/openid-configuration
 ```
 
 Hydra's public port is 14444 and its admin port 14445 on the host (odin-core's dev host owns
-4444). Register the demo relying party and run it:
+4444); only the dev override publishes them. `docker/compose.yml` alone is the production shape:
+no ports, hardened containers, a TLS proxy on the `oidc` network. See `docs/production.md`.
+Register the demo relying party and run it:
 
 ```bash
 scripts/create-test-client.sh > docker/demo-client.json     # prints client_id and client_secret
@@ -74,4 +76,6 @@ party can skip the broker's consent page altogether: register it with `--skip-co
 `dotnet build odin-oidc.sln --warnaserror` and `dotnet test odin-oidc.sln`; the fakes are described
 in `tests/Odin.Oidc.Login.Tests/BrokerApp.cs`. The `Dockerfile` header says how the image is built
 against the pinned odin-core commit (`scripts/bump-odin-core.sh` moves the pin); `.github/workflows/ci.yml`
-does the same on every push.
+does the same on every push and proves the image runs unprivileged and read-only and that the
+production compose publishes nothing. A `v*` tag publishes the image to GHCR
+(`.github/workflows/publish.yml`), with the digest to pin in the job summary.

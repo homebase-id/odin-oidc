@@ -1,0 +1,18 @@
+# Development on top of compose.yml (docker/.env selects both through COMPOSE_FILE): Hydra in --dev
+# (http redirect URIs, non-Secure cookies), debug logging, the reasons on its error page, and the
+# public and admin ports on the host, 14444 and 14445 (odin-core's dev host owns 4444). The login
+# app runs from `dotnet run` on the host with the dev certificate, not as a container.
+services:
+  hydra:
+    command: serve all --dev --config /etc/config/hydra/hydra.yml --sqa-opt-out
+    environment:
+      LOG_LEVEL: debug
+      OAUTH2_EXPOSE_INTERNAL_ERRORS: "true"
+    ports:
+      - "14444:4444" # public
+      - "14445:4445" # admin: /admin/* -- never expose beyond localhost
+
+  login:
+    # Not run in development; see the README.
+    profiles:
+      - container

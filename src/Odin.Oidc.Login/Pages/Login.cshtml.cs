@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.RateLimiting;
 using Odin.Core.Util;
 using Odin.Oidc.Login.Flow;
 using Odin.Oidc.Login.Hydra;
@@ -12,6 +13,7 @@ namespace Odin.Oidc.Login.Pages;
 /// identity. POST: start the YouAuth flow at that identity, remembering the challenge in the flow
 /// cookie so the callback can answer it.
 /// </summary>
+[EnableRateLimiting(RateLimits.FormPosts)]
 public sealed class LoginModel(HydraAdminClient hydra, YouAuthClient youAuth, LoginFlowCookie cookie, ILogger<LoginModel> logger) : PageModel
 {
     /// <summary>
@@ -71,7 +73,8 @@ public sealed class LoginModel(HydraAdminClient hydra, YouAuthClient youAuth, Lo
         var (authorizeUrl, state, privateKey) = youAuth.Begin(domain);
         cookie.Write(Response, new LoginFlowState(challenge, domain, state, privateKey, remember));
 
-        logger.LogInformation("Sending the browser to {identity} for Hydra challenge {challenge}", domain, challenge);
+        logger.LogInformation("Sending the browser to its identity for a Hydra challenge");
+        logger.LogDebug("Sending the browser to {identity} for Hydra challenge {challenge}", domain, challenge);
         return Redirect(authorizeUrl.ToString());
     }
 
