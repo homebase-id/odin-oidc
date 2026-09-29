@@ -1,0 +1,25 @@
+@page "/try/callback"
+@model Odin.Oidc.Login.Pages.TryCallbackModel
+@{
+    ViewData["Title"] = "Signed in";
+}
+@if (Model.Refusal != null)
+{
+    <h1>The sign-in was refused</h1>
+    <p>@Model.Refusal</p>
+    <p><a href="/try">Try again</a></p>
+}
+else
+{
+    <h1>Signed in as <strong>@Model.Result!.Subject</strong></h1>
+    <p>The id_token a site receives carries these claims:</p>
+    <table class="claims">
+        @foreach (var (name, value) in Model.Result.IdTokenClaims.OrderBy(c => c.Key))
+        {
+            <tr><th>@name</th><td>@value.ToString()</td></tr>
+        }
+    </table>
+    <p>And <code>/userinfo</code>, with the access token, answers:</p>
+    <pre>@Model.Result.Userinfo</pre>
+    <p class="muted">Nothing was stored: this page is the only place these were shown. <a href="/try">Again</a></p>
+}

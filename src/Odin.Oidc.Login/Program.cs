@@ -6,6 +6,7 @@ using Odin.Oidc.Login.Flow;
 using Odin.Oidc.Login.Hydra;
 using Odin.Oidc.Login.Options;
 using Odin.Oidc.Login.Registration;
+using Odin.Oidc.Login.Try;
 using Odin.Oidc.Login.YouAuth;
 using IPNetwork = Microsoft.AspNetCore.HttpOverrides.IPNetwork;
 
@@ -15,6 +16,8 @@ var options = builder.Configuration.GetSection(BrokerOptions.Section).Get<Broker
 builder.Services.AddOptions<BrokerOptions>().BindConfiguration(BrokerOptions.Section);
 builder.Services.AddRazorPages();
 builder.Services.AddSingleton<LoginFlowCookie>();
+builder.Services.AddSingleton<TryFlowCookie>();
+builder.Services.AddSingleton<TryRelyingParty>();
 builder.Services.AddSingleton<YouAuthClient>();
 builder.Services.AddSingleton<ProfileClaims>();
 builder.Services.AddMemoryCache();

@@ -88,6 +88,11 @@ HYDRA_ISSUER=https://collab.dotyou.cloud:8443/ node scripts/demo-rp.mjs --url-cl
 Open http://127.0.0.1:5556: no client id was created by hand, and Hydra's client list
 (`curl http://127.0.0.1:14445/admin/clients`) shows the one the app registered.
 
+The broker also carries its own relying party at `/try`: this app signing in through itself as a
+URL client whose document is `/try/client.json`, PKCE, nothing registered. Open
+https://collab.dotyou.cloud:8443/try (or `/try` on a deployed broker) and sign in; the page shows
+the id_token's claims and userinfo's answer, which is what a site receives.
+
 ## Tests, image, CI
 
 `dotnet build odin-oidc.sln --warnaserror` and `dotnet test odin-oidc.sln`; the fakes are described
