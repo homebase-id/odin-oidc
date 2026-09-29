@@ -5,7 +5,9 @@ broker's origin (for the public one, `https://oidc.homebase.id/`), and discovery
 `/.well-known/openid-configuration`. The subject a login returns is the person's identity
 domain; `docs/flow.md` lists every claim.
 
-There are two ways to be a relying party.
+There are two ways to be a relying party. To see the first one work before writing anything,
+open `/try` on the broker (`https://oidc.homebase.id/try` for the public one): it is the broker
+signing in through itself as such a client, and shows what a site receives.
 
 ## 1. No registration: your client id is your own URL
 

@@ -10,7 +10,7 @@ user-defined network, `oidc`, with a fixed subnet (`OIDC_NETWORK`, default `172.
 
 | Container | Listens on the `oidc` network | Route it from the proxy? |
 |---|---|---|
-| `login` | `login:8080`, the login app | yes: **`/oauth2/auth` and `/.well-known/openid-configuration`**, and everything that is not Hydra's (`/login`, `/consent`, `/logout`, `/youauth/callback`, `/.well-known/youauth-client.json`, `/healthz`, `/site.css`) |
+| `login` | `login:8080`, the login app | yes: **`/oauth2/auth` and `/.well-known/openid-configuration`**, and everything that is not Hydra's (`/login`, `/consent`, `/logout`, `/youauth/callback`, `/try`, `/try/*`, `/.well-known/youauth-client.json`, `/healthz`, `/site.css`) |
 | `hydra` | `hydra:4444`, the public OAuth2/OIDC API | yes: the rest of `/oauth2/*`, `/.well-known/jwks.json`, `/userinfo`; or route these to the login app too, which relays them |
 | `hydra` | `hydra:4445`, the admin API | **never**; reach it with `docker compose exec hydra hydra ...` |
 | `postgres` | `postgres:5432` | no |
@@ -153,9 +153,11 @@ restart the container on. Probe `/.well-known/openid-configuration` too.
 ## Go-live checklist
 
 1. The backup ran once and the verify-restore passed, even on the empty database.
-2. A demo relying party registered; `scripts/demo-rp.mjs` against the real issuer signs someone in;
-   their identity's consent page names the broker by its published name, since the client document
-   is fetched from the real origin for the first time.
+2. `/try` on the deployed origin signs someone in and shows their claims. It is the broker as a
+   relying party of itself, a URL client with nothing registered, so it proves the gateway, the
+   document fetch over the public origin, the consent page and the token exchange in one go; their
+   identity's consent page names the broker by its published name, since the YouAuth client
+   document is fetched from the real origin for the first time.
 3. A signing-key rotation rehearsed: id_tokens issued before still verify against the JWKS.
 4. The system-secret rotation rehearsed on the scratch restore.
 5. No new listening port on the host beyond the proxy's.

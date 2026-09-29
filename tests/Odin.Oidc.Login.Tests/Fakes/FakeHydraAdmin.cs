@@ -37,6 +37,9 @@ public sealed class FakeHydraAdmin
     public List<string> ClientUpdates { get; } = [];
     /// <summary>Authorize requests the public API received (path and query).</summary>
     public List<string> PublicAuthorizes { get; } = [];
+    /// <summary>Token requests the public API received (form bodies); each is answered with an unsigned id_token for <see cref="Subject"/> carrying the last authorize's nonce.</summary>
+    public List<string> TokenRequests { get; } = [];
+    public List<string?> UserinfoBearers { get; } = [];
     public const string PublicCookie = "ory_hydra_login_csrf_dev=abc123; Path=/; HttpOnly; SameSite=Lax";
 
     public List<(string challenge, string body)> LoginAccepts { get; } = [];
@@ -94,6 +97,23 @@ public sealed class FakeHydraAdmin
             response.Headers.Location = new Uri(RedirectTo);
             response.Headers.TryAddWithoutValidation("Set-Cookie", PublicCookie);
             return Task.FromResult(response);
+        }
+        if (path == "/oauth2/token" && request.Method == HttpMethod.Post)
+        {
+            TokenRequests.Add(body!);
+            var lastAuthorize = PublicAuthorizes.LastOrDefault() ?? "";
+            var nonce = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri("http://x" + lastAuthorize).Query).TryGetValue("nonce", out var n) ? n.ToString() : "";
+            var payload = Microsoft.AspNetCore.WebUtilities.WebEncoders.Base64UrlEncode(System.Text.Encoding.UTF8.GetBytes(
+                JsonSerializer.Serialize(new { iss = "http://hydra:4444/", sub = Subject, nonce, did = $"did:web:{Subject}", name = "Frodo Baggins" })));
+            return Task.FromResult(RecordingHandler.Json(HttpStatusCode.OK, JsonSerializer.Serialize(new
+            {
+                access_token = "at-1", token_type = "bearer", expires_in = 3600, id_token = $"e30.{payload}.sig",
+            })));
+        }
+        if (path == "/userinfo")
+        {
+            UserinfoBearers.Add(request.Headers.Authorization?.Parameter);
+            return Task.FromResult(RecordingHandler.Json(HttpStatusCode.OK, JsonSerializer.Serialize(new { sub = Subject, name = "Frodo Baggins" })));
         }
         if (path == "/.well-known/openid-configuration")
         {

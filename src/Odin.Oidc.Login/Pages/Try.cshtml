@@ -1,0 +1,15 @@
+@page "/try"
+@model Odin.Oidc.Login.Pages.TryModel
+@{
+    ViewData["Title"] = "Try it";
+}
+<h1>Try Sign in with Homebase</h1>
+<p>
+    This page is a relying party of this broker, the way any site can be: its client id is the URL of its
+    <a href="/try/client.json">client document</a>, and nothing was registered by hand. Signing in here
+    shows what a site gets.
+</p>
+<form method="post">
+    <button type="submit">Sign in with Homebase</button>
+</form>
+<p class="muted">You will be asked which Homebase identity is yours, sent to it to approve, and brought back here with the claims a site would receive.</p>

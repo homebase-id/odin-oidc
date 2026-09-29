@@ -5,6 +5,7 @@ using Odin.Core;
 using Odin.Oidc.Login.Flow;
 using Odin.Oidc.Login.Hydra;
 using Odin.Oidc.Login.Options;
+using Odin.Oidc.Login.Try;
 using Odin.Oidc.Login.YouAuth;
 
 namespace Odin.Oidc.Login.Endpoints;
@@ -21,6 +22,7 @@ public static class BrokerEndpoints
         app.MapGet("/youauth/callback", YouAuthCallback).RequireRateLimiting(FormPostLimiter.Policy);
         app.MapGet("/logout", Logout);
         app.MapGet("/.well-known/youauth-client.json", ClientDocument);
+        app.MapGet("/try/client.json", TryClientDocument);
         app.MapGet("/healthz", Health);
     }
 
@@ -112,6 +114,13 @@ public static class BrokerEndpoints
     {
         var hydraReady = await hydra.IsReadyAsync(ct);
         return hydraReady ? Results.Text("ok") : Results.Text("hydra is not ready", statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    /// <summary>The try-it relying party's client document: this app's own registration as a URL client (Try/TryRelyingParty.cs).</summary>
+    private static IResult TryClientDocument(IOptions<BrokerOptions> options, HttpContext context)
+    {
+        context.Response.Headers.CacheControl = "public, max-age=3600";
+        return Results.Json(TryRelyingParty.Document(options.Value));
     }
 
     /// <summary>
