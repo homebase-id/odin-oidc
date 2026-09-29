@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Odin.Oidc.Login.Flow;
 
 namespace Odin.Oidc.Login.Hydra;
 
@@ -108,9 +109,7 @@ public sealed class HydraAdminClient(HttpClient http)
         }
         if (!response.IsSuccessStatusCode)
         {
-            var error = TryParse<HydraError>(body);
-            var detail = error?.Error != null ? $"{error.Error}: {error.ErrorDescription}" : body;
-            throw new HydraException($"Hydra answered {response.RequestMessage?.Method} {url} with {(int)response.StatusCode}: {detail}");
+            throw new HydraException($"Hydra answered {response.RequestMessage?.Method} {url} with {(int)response.StatusCode}: {OAuthError.Describe(body)}");
         }
         return body;
     }
@@ -128,11 +127,5 @@ public sealed class HydraAdminClient(HttpClient http)
         {
             return default;
         }
-    }
-
-    private sealed class HydraError
-    {
-        public string? Error { get; set; }
-        public string? ErrorDescription { get; set; }
     }
 }

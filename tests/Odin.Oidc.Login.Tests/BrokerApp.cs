@@ -116,6 +116,7 @@ public sealed class BrokerApp : WebApplicationFactory<Program>
             services.AddHttpClient(HydraRelay.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => Hydra.Handler);
             services.AddHttpClient(YouAuthClient.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => Identity.Handler);
             services.AddHttpClient(ClientDocumentFetcher.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => Web.Handler);
+            services.AddHttpClient(Login.Try.TryRelyingParty.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => Hydra.Handler);
             services.AddSingleton<IStartupFilter>(new RemoteAddressFromHeader());
             services.AddSingleton<ILoggerProvider>(new ListLoggerProvider(Logs));
         });

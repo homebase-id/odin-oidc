@@ -9,7 +9,7 @@ namespace Odin.Oidc.Login.Try;
 public sealed record TryFlowState(string State, string Verifier, string Nonce);
 
 public sealed class TryFlowCookie(IDataProtectionProvider dataProtection, IOptions<BrokerOptions> options)
-    : ProtectedCookie<TryFlowState>(dataProtection, Name, "Odin.Oidc.Login.Try.v1", options.Value.FlowLifetime)
+    : ProtectedCookie<TryFlowState>(dataProtection, options, Name, "Odin.Oidc.Login.Try.v1")
 {
     public const string Name = "__Host-odin_oidc_try";
 }

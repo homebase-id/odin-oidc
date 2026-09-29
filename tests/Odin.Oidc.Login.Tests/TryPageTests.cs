@@ -44,7 +44,7 @@ public class TryPageTests
         using var browser = app.CreateClient();
         app.Web.Document(ClientId, await (await browser.GetAsync("/try/client.json")).Content.ReadAsStringAsync());
 
-        var start = await Start(browser);
+        var (start, _) = await Start(browser);
         var authorize = await browser.GetAsync(start.Headers.Location!);
 
         Assert.That(authorize.StatusCode, Is.EqualTo(HttpStatusCode.Found), await authorize.Content.ReadAsStringAsync());
@@ -60,12 +60,10 @@ public class TryPageTests
         using var app = new BrokerApp();
         using var browser = app.CreateClient();
 
-        var response = await Start(browser);
+        var (response, query) = await Start(browser);
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Redirect));
-        var location = response.Headers.Location!;
-        Assert.That(location.GetLeftPart(UriPartial.Path), Is.EqualTo(Origin + "/oauth2/auth"), "through the public origin, so the gateway and the document fetch are exercised");
-        var query = QueryHelpers.ParseQuery(location.Query);
+        Assert.That(response.Headers.Location!.GetLeftPart(UriPartial.Path), Is.EqualTo(Origin + "/oauth2/auth"), "through the public origin, so the gateway and the document fetch are exercised");
         Assert.That(query["client_id"].ToString(), Is.EqualTo(ClientId));
         Assert.That(query["redirect_uri"].ToString(), Is.EqualTo(Callback));
         Assert.That(query["scope"].ToString(), Is.EqualTo("openid profile"));
@@ -81,15 +79,15 @@ public class TryPageTests
     {
         using var app = new BrokerApp();
         using var browser = app.CreateClient();
-        var start = await Start(browser);
-        var query = QueryHelpers.ParseQuery(start.Headers.Location!.Query);
-        app.Hydra.PublicAuthorizes.Add(start.Headers.Location.PathAndQuery); // Hydra saw the authorize (the fake's token answer takes the nonce from it)
+        var (_, query) = await Start(browser);
+        app.Hydra.IdTokenNonce = query["nonce"].ToString();
 
         var response = await browser.GetAsync($"/try/callback?code=code-1&state={query["state"]}");
         var html = await response.Content.ReadAsStringAsync();
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK), html);
         var token = QueryHelpers.ParseQuery("?" + app.Hydra.TokenRequests.Single());
+        Assert.That(app.Hydra.Handler.Requests.Select(r => r.request.RequestUri!.ToString()), Is.EqualTo(new[] { Origin + "/oauth2/token", Origin + "/userinfo" }), "through the public origin, like any site: the proxy's routes for both are part of what /try proves");
         Assert.That(token["grant_type"].ToString(), Is.EqualTo("authorization_code"));
         Assert.That(token["code"].ToString(), Is.EqualTo("code-1"));
         Assert.That(token["client_id"].ToString(), Is.EqualTo(ClientId));
@@ -120,10 +118,9 @@ public class TryPageTests
     {
         using var app = new BrokerApp();
         using var browser = app.CreateClient();
-        var start = await Start(browser);
-        var state = QueryHelpers.ParseQuery(start.Headers.Location!.Query)["state"];
+        var (_, query) = await Start(browser);
 
-        var response = await browser.GetAsync($"/try/callback?error=access_denied&error_description=The+user+said+no&state={state}");
+        var response = await browser.GetAsync($"/try/callback?error=access_denied&error_description=The+user+said+no&state={query["state"]}");
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(await response.Content.ReadAsStringAsync(), Does.Contain("refused").And.Contain("access_denied: The user said no"));
@@ -135,20 +132,21 @@ public class TryPageTests
     {
         using var app = new BrokerApp();
         using var browser = app.CreateClient();
-        var start = await Start(browser);
-        var state = QueryHelpers.ParseQuery(start.Headers.Location!.Query)["state"];
-        app.Hydra.PublicAuthorizes.Add("/oauth2/auth?nonce=somebody-elses");
+        var (_, query) = await Start(browser);
+        app.Hydra.IdTokenNonce = "somebody-elses";
 
-        var response = await browser.GetAsync($"/try/callback?code=c&state={state}");
+        var response = await browser.GetAsync($"/try/callback?code=c&state={query["state"]}");
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
         Assert.That(await response.Content.ReadAsStringAsync(), Does.Contain("nonce"));
     }
 
-    private static async Task<HttpResponseMessage> Start(HttpClient browser)
+    /// <summary>Presses the button: the redirect to the authorize endpoint, and its query.</summary>
+    private static async Task<(HttpResponseMessage response, Dictionary<string, Microsoft.Extensions.Primitives.StringValues> query)> Start(HttpClient browser)
     {
         var page = await (await browser.GetAsync("/try")).Content.ReadAsStringAsync();
         Assert.That(page, Does.Contain("Sign in with Homebase"));
-        return await BrokerApp.PostFormAsync(browser, "/try", page, []);
+        var response = await BrokerApp.PostFormAsync(browser, "/try", page, []);
+        return (response, QueryHelpers.ParseQuery(response.Headers.Location?.Query ?? ""));
     }
 }
