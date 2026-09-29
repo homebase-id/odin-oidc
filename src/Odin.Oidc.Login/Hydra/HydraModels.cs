@@ -8,9 +8,24 @@ public sealed class HydraClient
     public string? ClientId { get; set; }
     public string? ClientName { get; set; }
     public bool SkipConsent { get; set; }
+    public List<string>? RedirectUris { get; set; }
+    public string? TokenEndpointAuthMethod { get; set; }
+    public List<string>? GrantTypes { get; set; }
+    public List<string>? ResponseTypes { get; set; }
+    public string? Scope { get; set; }
+    public HydraClientMetadata? Metadata { get; set; }
+}
 
-    /// <summary>What the pages call the relying party: its name, else its id, else a generic word.</summary>
-    public string DisplayName => ClientName is { Length: > 0 } ? ClientName : ClientId is { Length: > 0 } ? ClientId : "A site";
+/// <summary>
+/// Hydra stores any JSON as a client's metadata; these are the members this app writes or reads.
+/// A URL client is <c>registered: by-url</c>; an operator's script may mark its clients
+/// <c>managed: operator</c>, and this app never writes to those.
+/// </summary>
+public sealed class HydraClientMetadata
+{
+    public string? Registered { get; set; }
+    public string? Managed { get; set; }
+    public DateTimeOffset? FetchedAt { get; set; }
 }
 
 public sealed class HydraOidcContext
@@ -25,6 +40,8 @@ public sealed class HydraLoginRequest
     public string? Subject { get; set; }
     public HydraClient Client { get; set; } = new();
     public HydraOidcContext? OidcContext { get; set; }
+    /// <summary>The authorize request that started the flow; its redirect_uri is the one Hydra validated.</summary>
+    public string? RequestUrl { get; set; }
 }
 
 public sealed class HydraConsentRequest
@@ -35,6 +52,7 @@ public sealed class HydraConsentRequest
     public HydraClient Client { get; set; } = new();
     public List<string> RequestedScope { get; set; } = [];
     public List<string>? RequestedAccessTokenAudience { get; set; }
+    public string? RequestUrl { get; set; }
 }
 
 /// <summary>How long Hydra remembers a login or a consent for a browser when asked to: a month.</summary>

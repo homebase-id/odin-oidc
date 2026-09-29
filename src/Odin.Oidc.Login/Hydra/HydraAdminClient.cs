@@ -8,7 +8,8 @@ namespace Odin.Oidc.Login.Hydra;
 /// The admin calls of Hydra's login, consent and logout flows this app makes, over a typed
 /// HttpClient whose base address is the admin API (port 4445; never exposed). Contract: GET the
 /// request by its challenge, PUT accept or reject, send the browser to the <c>redirect_to</c> that
-/// comes back. Any call about a challenge already answered is HTTP 410.
+/// comes back. Any call about a challenge already answered is HTTP 410. Also the client
+/// registrations this app makes for URL clients (Registration/UrlClientRegistry.cs).
 /// </summary>
 public sealed class HydraAdminClient(HttpClient http)
 {
@@ -39,6 +40,33 @@ public sealed class HydraAdminClient(HttpClient http)
     public Task<string> AcceptLogoutAsync(string challenge, CancellationToken ct) =>
         PutAsync(Url("logout", "/accept", challenge), new { }, ct);
 
+    /// <summary>The client by its id, or null when Hydra has none.</summary>
+    public async Task<HydraClient?> GetClientAsync(string clientId, CancellationToken ct)
+    {
+        using var response = await http.GetAsync(ClientUrl(clientId), ct);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+        return Parse<HydraClient>(await AnsweredAsync(response, ClientUrl(clientId), ct), ClientUrl(clientId));
+    }
+
+    /// <summary>Creates the client; one created meanwhile by another instance (409) is as good.</summary>
+    public async Task CreateClientAsync(HydraClient client, CancellationToken ct)
+    {
+        using var response = await http.PostAsJsonAsync("admin/clients", client, Json, ct);
+        if (response.StatusCode != HttpStatusCode.Conflict)
+        {
+            await AnsweredAsync(response, "admin/clients", ct);
+        }
+    }
+
+    public async Task UpdateClientAsync(HydraClient client, CancellationToken ct)
+    {
+        using var response = await http.PutAsJsonAsync(ClientUrl(client.ClientId!), client, Json, ct);
+        await AnsweredAsync(response, ClientUrl(client.ClientId!), ct);
+    }
+
     /// <summary>Hydra's own readiness (database reachable, migrations applied), for this app's health answer.</summary>
     public async Task<bool> IsReadyAsync(CancellationToken ct)
     {
@@ -54,6 +82,8 @@ public sealed class HydraAdminClient(HttpClient http)
     }
 
     //
+
+    private static string ClientUrl(string clientId) => $"admin/clients/{Uri.EscapeDataString(clientId)}";
 
     private static string Url(string flow, string action, string challenge) =>
         $"admin/oauth2/auth/requests/{flow}{action}?{flow}_challenge={Uri.EscapeDataString(challenge)}";

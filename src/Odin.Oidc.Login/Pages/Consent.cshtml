@@ -3,7 +3,11 @@
 @{
     ViewData["Title"] = "Approve";
 }
-<h1>Sign in to <strong>@Model.Consent.Client.DisplayName</strong> as <strong>@Model.Consent.Subject</strong>?</h1>
+<h1>Sign in to <strong class="domain">@Model.RelyingParty.Shown</strong> as <strong>@Model.Consent.Subject</strong>?</h1>
+@if (Model.RelyingParty.Name != null)
+{
+    <p class="claim">Calling itself &lsquo;@Model.RelyingParty.Name&rsquo;</p>
+}
 <p>If you allow it, this site learns:</p>
 <ul class="grants">
     <li>your identity, @Model.Consent.Subject</li>

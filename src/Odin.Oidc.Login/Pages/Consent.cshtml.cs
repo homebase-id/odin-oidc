@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Odin.Oidc.Login.Claims;
 using Odin.Oidc.Login.Flow;
 using Odin.Oidc.Login.Hydra;
+using Odin.Oidc.Login.Registration;
 
 namespace Odin.Oidc.Login.Pages;
 
@@ -18,6 +19,7 @@ public sealed class ConsentModel(HydraAdminClient hydra, ProfileClaims profileCl
 {
     public string ConsentChallenge { get; private set; } = "";
     public HydraConsentRequest Consent { get; private set; } = new();
+    public RelyingParty RelyingParty { get; private set; } = new(null, null);
 
     public async Task<IActionResult> OnGetAsync([FromQuery(Name = "consent_challenge")] string? consentChallenge, CancellationToken ct)
     {
@@ -30,6 +32,7 @@ public sealed class ConsentModel(HydraAdminClient hydra, ProfileClaims profileCl
 
         ConsentChallenge = challenge;
         Consent = request;
+        RelyingParty = RelyingParty.From(request.Client, request.RequestUrl);
         return Page();
     }
 

@@ -5,6 +5,7 @@ using Odin.Oidc.Login.Endpoints;
 using Odin.Oidc.Login.Flow;
 using Odin.Oidc.Login.Hydra;
 using Odin.Oidc.Login.Options;
+using Odin.Oidc.Login.Registration;
 using Odin.Oidc.Login.YouAuth;
 using IPNetwork = Microsoft.AspNetCore.HttpOverrides.IPNetwork;
 
@@ -16,6 +17,9 @@ builder.Services.AddRazorPages();
 builder.Services.AddSingleton<LoginFlowCookie>();
 builder.Services.AddSingleton<YouAuthClient>();
 builder.Services.AddSingleton<ProfileClaims>();
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<ClientDocumentFetcher>();
+builder.Services.AddScoped<UrlClientRegistry>();
 builder.Services.AddHttpClient<HydraAdminClient>(http =>
 {
     http.BaseAddress = new Uri(options.HydraAdminUrl);
@@ -29,6 +33,28 @@ builder.Services.AddHttpClient(YouAuthClient.HttpClientName, http =>
         http.MaxResponseContentBufferSize = 64 * 1024; // an identity's answers are small; it is a third party
     })
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
+
+// Hydra's public API, relayed: no redirect followed (they are the browser's), no cookie kept (they are the browser's).
+builder.Services.AddHttpClient(HydraRelay.HttpClientName, http =>
+    {
+        http.BaseAddress = new Uri(options.HydraPublicUrl);
+        http.Timeout = TimeSpan.FromSeconds(15);
+    })
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
+
+// Reads a URL client's document: a third party's small JSON, from a public address only.
+builder.Services.AddHttpClient(ClientDocumentFetcher.HttpClientName, http =>
+    {
+        http.Timeout = TimeSpan.FromSeconds(3);
+        http.MaxResponseContentBufferSize = ClientDocumentFetcher.MaxBytes;
+        http.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+    })
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        AllowAutoRedirect = false,
+        UseCookies = false,
+        ConnectCallback = SafeAddress.Connect(allowLocal: options.AllowLocalhostClients),
+    });
 
 builder.Services.AddDataProtection()
     .SetApplicationName("odin-oidc")
@@ -90,6 +116,7 @@ app.UseRouting();
 app.UseRateLimiter();
 app.MapRazorPages();
 app.MapBrokerEndpoints();
+app.MapHydraRelay();
 app.Run();
 
 public partial class Program;

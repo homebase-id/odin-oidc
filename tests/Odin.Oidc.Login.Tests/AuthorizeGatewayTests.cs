@@ -122,8 +122,9 @@ public class AuthorizeGatewayTests
         var localhost = "http://localhost?redirect_uri=http%3A%2F%2F127.0.0.1%2Fcb";
 
         using (var app = new BrokerApp())
-        using (var browser = app.CreateClient())
         {
+            app.Settings["Broker:AllowLocalhostClients"] = "false"; // the test host is the Development environment, whose settings allow it
+            using var browser = app.CreateClient();
             var response = await browser.GetAsync(Authorize(localhost, "http://127.0.0.1:5556/cb"));
             Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest), "production: a loopback client id is never a relying party");
             Assert.That(app.Hydra.ClientCreates, Is.Empty);
@@ -137,7 +138,7 @@ public class AuthorizeGatewayTests
             Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Found));
             Assert.That(app.Web.Requests, Is.Empty, "never fetched");
             var created = JsonDocument.Parse(app.Hydra.ClientCreates.Single()).RootElement;
-            Assert.That(created.GetProperty("redirect_uris").EnumerateArray().Select(e => e.GetString()), Is.EqualTo(new[] { "http://127.0.0.1:5556/cb" }), "the callback as used, port included, since Hydra matches exactly");
+            Assert.That(created.GetProperty("redirect_uris").EnumerateArray().Select(e => e.GetString()), Is.EqualTo(new[] { "http://127.0.0.1/cb" }), "as declared; Hydra matches a loopback callback on any port (RFC 8252)");
         }
     }
 

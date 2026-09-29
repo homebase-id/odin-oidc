@@ -19,12 +19,14 @@ public class SafeAddressTests
     [TestCase("fe80::1")]
     [TestCase("fc00::1")]
     [TestCase("::ffff:10.0.0.1")]
+    [TestCase("203.0.113.7")]
+    [TestCase("2001:db8::1")]
     public void SpecialUseAddressesAreNeverFetched(string address)
     {
         Assert.That(SafeAddress.IsPublic(IPAddress.Parse(address)), Is.False);
     }
 
-    [TestCase("203.0.113.7")]
+    [TestCase("1.1.1.1")]
     [TestCase("65.21.248.203")]
     [TestCase("2a01:4f9:c012:8a7a::1")]
     public void PublicAddressesAre(string address)
