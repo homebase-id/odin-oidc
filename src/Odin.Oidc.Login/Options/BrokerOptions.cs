@@ -16,6 +16,10 @@ public sealed class BrokerOptions
     public string ClientName { get; set; } = "Homebase Sign-in";
 
     public string HydraAdminUrl { get; set; } = "http://127.0.0.1:14445/";
+    public string HydraPublicUrl { get; set; } = "http://127.0.0.1:14444/";
+
+    /// <summary>Development only: accept ATProto's <c>http://localhost</c> client id, whose callbacks come from its query. Never in production.</summary>
+    public bool AllowLocalhostClients { get; set; }
 
     /// <summary>Where Data Protection keeps its key ring, relative to the content root; shared between instances.</summary>
     public string KeyRingPath { get; set; } = "keys";

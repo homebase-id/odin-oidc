@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Odin.Oidc.Login.Hydra;
+using Odin.Oidc.Login.Registration;
 using Odin.Oidc.Login.Tests.Fakes;
 using Odin.Oidc.Login.YouAuth;
 
@@ -20,6 +21,7 @@ public sealed class BrokerApp : WebApplicationFactory<Program>
     public const string Frodo = "frodo.dotyou.cloud";
 
     public FakeHydraAdmin Hydra { get; } = new();
+    public FakeWeb Web { get; } = new();
     public FakeIdentity Identity { get; }
     public string PublicHost { get; }
 
@@ -90,6 +92,7 @@ public sealed class BrokerApp : WebApplicationFactory<Program>
         builder.UseSetting("Broker:PublicOrigin", $"https://{PublicHost}");
         builder.UseSetting("Broker:ClientName", "Homebase Sign-in");
         builder.UseSetting("Broker:HydraAdminUrl", "http://hydra-admin:4445/");
+        builder.UseSetting("Broker:HydraPublicUrl", "http://hydra:4444/");
         builder.UseSetting("Broker:KeyRingPath", keys);
 
         foreach (var (key, value) in Settings)
@@ -100,7 +103,9 @@ public sealed class BrokerApp : WebApplicationFactory<Program>
         builder.ConfigureTestServices(services =>
         {
             services.AddHttpClient<HydraAdminClient>().ConfigurePrimaryHttpMessageHandler(() => Hydra.Handler);
+            services.AddHttpClient(HydraRelay.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => Hydra.Handler);
             services.AddHttpClient(YouAuthClient.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => Identity.Handler);
+            services.AddHttpClient(ClientDocumentFetcher.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => Web.Handler);
             services.AddSingleton<IStartupFilter>(new RemoteAddressFromHeader());
             services.AddSingleton<ILoggerProvider>(new ListLoggerProvider(Logs));
         });
