@@ -2,17 +2,24 @@
 // A relying party the way a browser or native app is one: public client, authorization code with
 // PKCE (S256), state and nonce checked, then the id_token's claims and /userinfo. No dependencies;
 // Node 18 or later. Usage: node scripts/demo-rp.mjs <client_id>   (from create-public-client.sh)
+//                       node scripts/demo-rp.mjs --url-client  (no registration: the client id is
+// ATProto's http://localhost development client, its callback and scope in the query; a broker
+// with Broker:AllowLocalhostClients accepts it. A real site would use its own https URL and serve
+// the document there; see docs/relying-parties.md.)
 import { createServer } from "node:http";
 import { randomBytes, createHash } from "node:crypto";
 
-const clientId = process.argv[2];
-if (!clientId) {
-  console.error("usage: node scripts/demo-rp.mjs <client_id>");
-  process.exit(1);
-}
 const issuer = process.env.HYDRA_ISSUER ?? "http://127.0.0.1:14444/";
 const port = 5556;
 const redirectUri = `http://127.0.0.1:${port}/callback`;
+const scope = "openid offline profile";
+const clientId = process.argv[2] === "--url-client"
+  ? "http://localhost?" + new URLSearchParams({ redirect_uri: "http://127.0.0.1/callback", scope })
+  : process.argv[2];
+if (!clientId) {
+  console.error("usage: node scripts/demo-rp.mjs <client_id> | --url-client");
+  process.exit(1);
+}
 const b64url = (buf) => buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const flows = new Map(); // state -> { verifier, nonce }
 
@@ -28,7 +35,7 @@ createServer(async (req, res) => {
     flows.set(state, { verifier, nonce, startedAt: Date.now() });
     const auth = new URL(discovery.authorization_endpoint);
     auth.search = new URLSearchParams({
-      client_id: clientId, response_type: "code", scope: "openid offline profile",
+      client_id: clientId, response_type: "code", scope,
       redirect_uri: redirectUri, state, nonce,
       code_challenge: b64url(createHash("sha256").update(verifier).digest()), code_challenge_method: "S256",
     }).toString();

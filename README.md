@@ -66,10 +66,27 @@ node scripts/demo-rp.mjs <client_id>                              # http://127.0
 ```
 
 It prints the id_token's claims and the userinfo answer; `docs/flow.md` lists what they carry.
-The consent page names the relying party and lists that; Allow is remembered for a month on that
-browser, and "Keep me signed in" on the login page does the same for the login, so the next
-relying party skips both. `prompt=login` from a relying party still asks. A first-party relying
-party can skip the broker's consent page altogether: register it with `--skip-consent`.
+The consent page shows the relying party's domain large and its name small, and lists that; Allow
+is remembered for a month on that browser, and "Keep me signed in" on the login page does the
+same for the login, so the next relying party skips both. `prompt=login` from a relying party
+still asks. A first-party relying party can skip the broker's consent page altogether: register
+it with `--skip-consent`.
+
+### 4. A relying party with no registration at all
+
+A site's client id can be its own https URL, with a small JSON document there as its
+registration (`docs/relying-parties.md`); the login app sits in front of Hydra's authorize
+endpoint and registers such a client on first sight. To exercise it locally, the issuer must be
+the app's origin, since the app relays Hydra's public API (`HYDRA_ISSUER=https://collab.dotyou.cloud:8443/`
+in `docker/.env`, then `docker compose up -d`), and the demo relying party runs as ATProto's
+`http://localhost` development client, which the development settings accept without a document:
+
+```bash
+HYDRA_ISSUER=https://collab.dotyou.cloud:8443/ node scripts/demo-rp.mjs --url-client
+```
+
+Open http://127.0.0.1:5556: no client id was created by hand, and Hydra's client list
+(`curl http://127.0.0.1:14445/admin/clients`) shows the one the app registered.
 
 ## Tests, image, CI
 
