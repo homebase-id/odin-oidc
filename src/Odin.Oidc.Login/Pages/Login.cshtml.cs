@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Odin.Core.Util;
 using Odin.Oidc.Login.Flow;
 using Odin.Oidc.Login.Hydra;
+using Odin.Oidc.Login.Registration;
 using Odin.Oidc.Login.YouAuth;
 
 namespace Odin.Oidc.Login.Pages;
@@ -32,7 +33,7 @@ public sealed class LoginModel(HydraAdminClient hydra, YouAuthClient youAuth, Lo
     };
 
     public string LoginChallenge { get; private set; } = "";
-    public string RelyingPartyName { get; private set; } = "";
+    public RelyingParty RelyingParty { get; private set; } = new(null, null);
     public string Identity { get; private set; } = "";
     public string? Problem { get; private set; }
 
@@ -81,7 +82,7 @@ public sealed class LoginModel(HydraAdminClient hydra, YouAuthClient youAuth, Lo
     private void Show(string loginChallenge, HydraLoginRequest request, string identity)
     {
         LoginChallenge = loginChallenge;
-        RelyingPartyName = request.Client.DisplayName;
+        RelyingParty = RelyingParty.From(request.Client, request.RequestUrl);
         Identity = identity;
     }
 }

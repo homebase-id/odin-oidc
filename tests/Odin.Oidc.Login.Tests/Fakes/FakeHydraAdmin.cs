@@ -21,6 +21,23 @@ public sealed class FakeHydraAdmin
     public HttpStatusCode? LoginAnswer { get; set; }
     /// <summary>What /health/ready on the admin API says.</summary>
     public bool Ready { get; set; } = true;
+    /// <summary>The client the login and consent requests name, as Hydra returns it.</summary>
+    public string ClientId { get; set; } = "rp";
+    public string? ClientName { get; set; } = "Demo relying party";
+    public List<string> ClientRedirectUris { get; set; } = ["https://app.example/cb"];
+    /// <summary>The authorize request that started the flow, as Hydra reports it.</summary>
+    public string RequestUrl { get; set; } = RequestUrlFor("rp", "https://app.example/cb");
+
+    public static string RequestUrlFor(string clientId, string redirectUri) =>
+        $"http://hydra:4444/oauth2/auth?client_id={Uri.EscapeDataString(clientId)}&redirect_uri={Uri.EscapeDataString(redirectUri)}&response_type=code";
+
+    /// <summary>Clients as the admin API stores them (JSON bodies), by id.</summary>
+    public Dictionary<string, string> Clients { get; } = new();
+    public List<string> ClientCreates { get; } = [];
+    public List<string> ClientUpdates { get; } = [];
+    /// <summary>Authorize requests the public API received (path and query).</summary>
+    public List<string> PublicAuthorizes { get; } = [];
+    public const string PublicCookie = "ory_hydra_login_csrf_dev=abc123; Path=/; HttpOnly; SameSite=Lax";
 
     public List<(string challenge, string body)> LoginAccepts { get; } = [];
     public List<(string challenge, string body)> LoginRejects { get; } = [];
@@ -44,7 +61,50 @@ public sealed class FakeHydraAdmin
             : query.TryGetValue("logout_challenge", out var xc) ? xc.ToString() : "";
 
         HttpResponseMessage Redirect() => RecordingHandler.Json(HttpStatusCode.OK, JsonSerializer.Serialize(new { redirect_to = RedirectTo }));
-        var client = new { client_id = "rp", client_name = "Demo relying party", skip_consent = ClientSkipConsent };
+        var client = new { client_id = ClientId, client_name = ClientName, skip_consent = ClientSkipConsent, redirect_uris = ClientRedirectUris };
+
+        // The admin API's clients, and the public API's authorize and discovery.
+        if (path == "/admin/clients" && request.Method == HttpMethod.Post)
+        {
+            var id = JsonDocument.Parse(body!).RootElement.GetProperty("client_id").GetString()!;
+            Clients[id] = body!;
+            ClientCreates.Add(body!);
+            return Task.FromResult(RecordingHandler.Json(HttpStatusCode.Created, body!));
+        }
+        if (path.StartsWith("/admin/clients/"))
+        {
+            var id = Uri.UnescapeDataString(path["/admin/clients/".Length..]);
+            if (request.Method == HttpMethod.Get)
+            {
+                return Task.FromResult(Clients.TryGetValue(id, out var stored)
+                    ? RecordingHandler.Json(HttpStatusCode.OK, stored)
+                    : RecordingHandler.Json(HttpStatusCode.NotFound, """{"error":"Not Found"}"""));
+            }
+            if (request.Method == HttpMethod.Put)
+            {
+                Clients[id] = body!;
+                ClientUpdates.Add(body!);
+                return Task.FromResult(RecordingHandler.Json(HttpStatusCode.OK, body!));
+            }
+        }
+        if (path == "/oauth2/auth")
+        {
+            PublicAuthorizes.Add(request.RequestUri.PathAndQuery);
+            var response = new HttpResponseMessage(HttpStatusCode.Found);
+            response.Headers.Location = new Uri(RedirectTo);
+            response.Headers.TryAddWithoutValidation("Set-Cookie", PublicCookie);
+            return Task.FromResult(response);
+        }
+        if (path == "/.well-known/openid-configuration")
+        {
+            return Task.FromResult(RecordingHandler.Json(HttpStatusCode.OK, JsonSerializer.Serialize(new
+            {
+                issuer = "http://hydra:4444/",
+                authorization_endpoint = "http://hydra:4444/oauth2/auth",
+                token_endpoint = "http://hydra:4444/oauth2/token",
+                jwks_uri = "http://hydra:4444/.well-known/jwks.json",
+            })));
+        }
 
         if (LoginAnswer is { } status && path.StartsWith("/admin/oauth2/auth/requests/login"))
         {
@@ -61,6 +121,7 @@ public sealed class FakeHydraAdmin
                     challenge, skip = LoginSkip, subject = LoginSkip ? Subject : "", client,
                     requested_scope = RequestedScope,
                     oidc_context = new { login_hint = LoginHint },
+                    request_url = RequestUrl,
                 })));
             case ("PUT", "/admin/oauth2/auth/requests/login/accept"):
                 LoginAccepts.Add((challenge, body!));
@@ -74,6 +135,7 @@ public sealed class FakeHydraAdmin
                     challenge, skip = ConsentSkip, subject = Subject, client,
                     requested_scope = RequestedScope,
                     requested_access_token_audience = Array.Empty<string>(),
+                    request_url = RequestUrl,
                 })));
             case ("PUT", "/admin/oauth2/auth/requests/consent/accept"):
                 ConsentAccepts.Add((challenge, body!));

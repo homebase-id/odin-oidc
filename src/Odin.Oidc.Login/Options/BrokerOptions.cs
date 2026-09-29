@@ -17,6 +17,16 @@ public sealed class BrokerOptions
 
     public string HydraAdminUrl { get; set; } = "http://127.0.0.1:14445/";
 
+    /// <summary>Hydra's public API, which this app relays: the authorize gateway, discovery, and the rest.</summary>
+    public string HydraPublicUrl { get; set; } = "http://127.0.0.1:14444/";
+
+    /// <summary>
+    /// Development only, never in production: accept ATProto's <c>http://localhost</c> client id,
+    /// whose callbacks and scope are in its query, and fetch client documents from loopback and
+    /// private addresses, so relying parties on this machine can be URL clients.
+    /// </summary>
+    public bool AllowLocalhostClients { get; set; }
+
     /// <summary>Where Data Protection keeps its key ring, relative to the content root; shared between instances.</summary>
     public string KeyRingPath { get; set; } = "keys";
 

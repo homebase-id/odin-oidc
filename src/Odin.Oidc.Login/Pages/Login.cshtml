@@ -5,9 +5,13 @@
 }
 <h1>Sign in with Homebase</h1>
 <p>
-    <strong>@Model.RelyingPartyName</strong> asks you to prove who you are.
+    <strong class="domain">@Model.RelyingParty.Shown</strong> asks you to prove who you are.
     Type your Homebase identity and you will be sent to it to sign in and approve.
 </p>
+@if (Model.RelyingParty.Name != null)
+{
+    <p class="claim">Calling itself &lsquo;@Model.RelyingParty.Name&rsquo;</p>
+}
 <form method="post">
     <input type="hidden" name="login_challenge" value="@Model.LoginChallenge">
     <label for="identity">Your identity</label>

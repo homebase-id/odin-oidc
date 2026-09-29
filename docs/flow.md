@@ -7,7 +7,10 @@ sequenceDiagram
     participant app as Odin.Oidc.Login<br/>(this repo)
     participant idn as Sam's identity<br/>sam.dotyou.cloud
 
-    rp->>hydra: GET /oauth2/auth (client_id, PKCE, scope, state)
+    rp->>app: GET /oauth2/auth (client_id, PKCE, scope, state)
+    app->>rp: first sight of a URL client id: GET the client document at it (docs/relying-parties.md)
+    app->>hydra: POST /admin/clients: the document's callbacks, name, scope; public, PKCE
+    app->>hydra: relay GET /oauth2/auth
     hydra->>app: 302 /login?login_challenge
     app->>app: skip? accept at once. Else ask "which identity?" (login_hint prefilled)
     app->>idn: 302 YouAuth [030] /api/owner/v1/youauth/authorize<br/>client_type=domain, client_id=broker host,<br/>redirect_uri=https://broker/youauth/callback, public_key, state, cipher=aes-gcm
@@ -33,7 +36,7 @@ sequenceDiagram
 
 | Where | What | Why |
 |---|---|---|
-| Hydra's Postgres | OAuth client registrations, signing keys, login/consent sessions (subject, remembered consents), authorization codes, access and refresh tokens | Hydra's own state; an OIDC issuer cannot be stateless |
+| Hydra's Postgres | OAuth client registrations (operator-made, and URL clients created from their documents), signing keys, login/consent sessions (subject, remembered consents), authorization codes, access and refresh tokens | Hydra's own state; an OIDC issuer cannot be stateless |
 | Odin.Oidc.Login | A Data Protection key ring, nothing else at rest | Each login's state lives in a 10-minute encrypted cookie and dies with it |
 | The identity | A domain registration for the broker, between authorize and the broker's logout call | The broker releases it as soon as the identity is proven |
 

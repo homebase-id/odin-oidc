@@ -105,6 +105,7 @@ services:
       Broker__PublicOrigin: ${LOGIN_APP_URL}
       Broker__ClientName: ${BROKER_CLIENT_NAME:-Homebase Sign-in}
       Broker__HydraAdminUrl: http://hydra:4445/
+      Broker__HydraPublicUrl: http://hydra:4444/
       Broker__TrustedProxyNetworks__0: *oidc-network
     volumes:
       - login-keys:/keys

@@ -6,6 +6,8 @@ label { display: block; margin: 1.2rem 0 .4rem; font-weight: 600; }
 input[type=text] { width: 100%; box-sizing: border-box; font-size: 1.1rem; padding: .6rem .8rem; border: 1px solid #c4c9d0; border-radius: 8px; }
 button { margin-top: 1.2rem; width: 100%; font-size: 1.05rem; padding: .7rem; border: 0; border-radius: 8px; background: #2563eb; color: #fff; cursor: pointer; }
 .muted { color: #6b7280; font-size: .9rem; }
+.domain { font-size: 1.15em; word-break: break-all; }
+.claim { color: #6b7280; font-size: .9rem; margin-top: -.4rem; }
 .error { color: #b91c1c; }
 .check { font-weight: 400; font-size: .95rem; margin-top: 1rem; }
 .check input { margin-right: .4rem; }

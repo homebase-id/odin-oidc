@@ -10,25 +10,35 @@ user-defined network, `oidc`, with a fixed subnet (`OIDC_NETWORK`, default `172.
 
 | Container | Listens on the `oidc` network | Route it from the proxy? |
 |---|---|---|
-| `hydra` | `hydra:4444`, the public OAuth2/OIDC API | yes: `/.well-known/*`, `/oauth2/*`, `/userinfo` |
+| `login` | `login:8080`, the login app | yes: **`/oauth2/auth` and `/.well-known/openid-configuration`**, and everything that is not Hydra's (`/login`, `/consent`, `/logout`, `/youauth/callback`, `/.well-known/youauth-client.json`, `/healthz`, `/site.css`) |
+| `hydra` | `hydra:4444`, the public OAuth2/OIDC API | yes: the rest of `/oauth2/*`, `/.well-known/jwks.json`, `/userinfo`; or route these to the login app too, which relays them |
 | `hydra` | `hydra:4445`, the admin API | **never**; reach it with `docker compose exec hydra hydra ...` |
-| `login` | `login:8080`, the login app | yes: everything else (`/login`, `/consent`, `/logout`, `/youauth/callback`, `/.well-known/youauth-client.json`, `/healthz`, `/site.css`) |
 | `postgres` | `postgres:5432` | no |
 
-Put your TLS proxy on the `oidc` network and give both routes one origin, the issuer. The proxy
+The authorize endpoint and discovery go to the login app, not to Hydra: the app is the gateway
+that registers a URL client from its document before relaying the request to Hydra
+(`docs/relying-parties.md`), and it serves discovery as Hydra's with
+`client_id_metadata_document_supported` added. It relays the rest of
+Hydra's public API too, so the simplest contract is one upstream, the login app; the split
+below saves the token endpoint and userinfo the extra hop.
+
+Put your TLS proxy on the `oidc` network and give every route one origin, the issuer. The proxy
 must send `X-Forwarded-Proto` and `X-Forwarded-For`; both Hydra (`SERVE_TLS_ALLOW_TERMINATION_FROM`)
 and the login app (`Broker__TrustedProxyNetworks__0`) believe those headers only from the `oidc`
-subnet, which is why the subnet is fixed. Everything else the browser needs, HSTS aside, the login
-app sets itself (a strict content security policy, no framing, no caching); the proxy adds
-`Strict-Transport-Security` for Hydra's paths, since Hydra does not.
+subnet, which is why the subnet is fixed; the app sets them again on what it relays. Everything
+else the browser needs, HSTS aside, the login app sets itself (a strict content security policy,
+no framing, no caching); the proxy adds `Strict-Transport-Security` for Hydra's paths, since
+Hydra does not.
 
-One worked example, Caddy, on the `oidc` network:
+One worked example, Caddy, on the `oidc` network (Caddy picks the longest matching `handle`, so
+`/oauth2/auth` wins over `/oauth2/*`):
 
 ```
 oidc.example.org {
     header Strict-Transport-Security "max-age=31536000; includeSubDomains"
     request_body { max_size 64KB }   # a coarse first cut; the app's own limit, 16 KB, is the real one
-    handle /.well-known/openid-configuration { reverse_proxy hydra:4444 }
+    handle /.well-known/openid-configuration { reverse_proxy login:8080 }
+    handle /oauth2/auth                     { reverse_proxy login:8080 }
     handle /.well-known/jwks.json           { reverse_proxy hydra:4444 }
     handle /oauth2/*                        { reverse_proxy hydra:4444 }
     handle /userinfo                        { reverse_proxy hydra:4444 }
@@ -36,9 +46,13 @@ oidc.example.org {
 }
 ```
 
-Note the two `/.well-known` documents go to different containers: OpenID discovery and the JWKS
-are Hydra's; `/.well-known/youauth-client.json` is the login app's, which is what an identity reads
-before asking its owner to sign in here.
+Note the `/.well-known` documents: OpenID discovery is Hydra's, served through the login app;
+the JWKS is Hydra's directly; `/.well-known/youauth-client.json` is the login app's own, which is
+what an identity reads before asking its owner to sign in here.
+
+The login app reaches the site named in a URL client's id, so it needs outbound https to the
+internet; it refuses to connect to any special-use address (loopback, private, link-local, and
+the rest of RFC 6890), so a client id cannot point it into your network.
 
 ## Configuration
 
@@ -102,17 +116,32 @@ first on production.
 
 ## Relying parties
 
-Registration is by hand, on the host, through the admin API: `scripts/create-public-client.sh`
-(a browser or native app, PKCE) and `scripts/create-test-client.sh` (a server-side application
-with a secret) are the two shapes; for production change the name and the redirect URI, which is
-the allowlist (https only, matched exactly), and add `--skip-consent` for a first-party relying
-party so the broker's consent page is skipped; the owner still approves the sign-in at their own
-identity. Keep a list of registered clients (name, id, redirect URIs, skip consent) with your
-deployment.
+Two kinds, told apart in Hydra by the client's `metadata`:
+
+**URL clients** need nothing from the operator: their client id is their own https URL, and the
+document there is their registration (`docs/relying-parties.md`). The login app creates them in
+Hydra on first sight with `metadata.registered = "by-url"`, and updates them when the document
+changes. They are public clients with PKCE, callbacks only on their own origin; the consent page
+shows their host large and their self-declared name small. Rows for sites nobody signs in
+through any more can be removed now and then: `delete from hydra_client where metadata->>'registered'
+= 'by-url' and created_at < now() - interval '30 days' and id not in (select client_id from
+hydra_oauth2_flow)` (a flow row lives about a month, see above), and the app recreates any that
+returns.
+
+**Operator-registered clients** are made by hand, on the host, through the admin API:
+`scripts/create-public-client.sh` (a browser or native app, PKCE) and
+`scripts/create-test-client.sh` (a server-side application with a secret) are the two shapes; for
+production change the name and the redirect URI, which is the allowlist (https only, matched
+exactly), and add `--skip-consent` for a first-party relying party so the broker's consent page is
+skipped; the owner still approves the sign-in at their own identity. The app never writes to a
+client that is not marked `registered: by-url`. Keep a list (name, id, redirect URIs, skip consent)
+with your deployment. This is the path for software that insists on a client secret.
 
 ## Logging
 
-At Information the login app names no identity domain; Debug does, for an incident. Container
+At Information the login app names no identity domain; Debug does, for an incident. Relying
+parties are named at Information (a URL client's id, when it is registered, updated or refused):
+they are sites, not people. Container
 logs rotate (json-file, 10 MB x 5); a host may set another driver.
 
 ## Health
