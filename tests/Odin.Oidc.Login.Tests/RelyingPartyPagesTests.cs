@@ -15,7 +15,7 @@ public class RelyingPartyPagesTests
         app.Hydra.ClientId = "https://evil.example/app";
         app.Hydra.ClientName = "Homebase Bank";
         app.Hydra.ClientRedirectUris = ["https://evil.example/cb"];
-        app.Hydra.RequestUrl = "http://hydra:4444/oauth2/auth?client_id=https%3A%2F%2Fevil.example%2Fapp&redirect_uri=https%3A%2F%2Fevil.example%2Fcb&response_type=code";
+        app.Hydra.RequestUrl = Fakes.FakeHydraAdmin.RequestUrlFor("https://evil.example/app", "https://evil.example/cb");
         return app;
     }
 
@@ -49,7 +49,7 @@ public class RelyingPartyPagesTests
     public async Task AnInternationalisedCallbackHostIsShownAsPunycode()
     {
         using var app = AppWithBank();
-        app.Hydra.RequestUrl = "http://hydra:4444/oauth2/auth?client_id=x&redirect_uri=" + Uri.EscapeDataString("https://bücher.example/cb");
+        app.Hydra.RequestUrl = Fakes.FakeHydraAdmin.RequestUrlFor("x", "https://bücher.example/cb");
         using var browser = app.CreateClient();
 
         var html = await (await browser.GetAsync("/login?login_challenge=ch1")).Content.ReadAsStringAsync();

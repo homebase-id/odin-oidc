@@ -1,17 +1,14 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.Extensions.Options;
 using Odin.Oidc.Login.Flow;
-using Odin.Oidc.Login.Options;
 
 namespace Odin.Oidc.Login.Registration;
 
 /// <summary>
 /// Hydra's public API through this app. The authorize endpoint is the gateway: a URL client is
 /// registered from its document before the request goes on; anything else passes through
-/// untouched. Discovery is Hydra's with the authorize endpoint pointed here and the draft's member
-/// added. The rest (token, userinfo, JWKS, revocation, logout) is relayed as is, so a deployment
+/// untouched. Discovery is Hydra's with the draft's member added (the issuer is this app's origin,
+/// so Hydra's authorize endpoint already names it). The rest (token, userinfo, JWKS, revocation, logout) is relayed as is, so a deployment
 /// may route all of Hydra's public paths through this app, or only these two (docs/production.md).
 /// The relay is a plain HttpClient: same method, path, query, headers and body; Hydra's status,
 /// headers (its CSRF cookies among them) and body back.
@@ -29,49 +26,42 @@ public static class HydraRelay
         app.Map("/userinfo", Relay);
     }
 
-    private static async Task Authorize(HttpContext context, UrlClientRegistry registry, IHttpClientFactory http, IOptions<BrokerOptions> options, CancellationToken ct)
+    private static async Task Authorize(HttpContext context, UrlClientRegistry registry, IHttpClientFactory http, CancellationToken ct)
     {
-        IEnumerable<KeyValuePair<string, Microsoft.Extensions.Primitives.StringValues>> parameters;
+        string? clientId, redirectUri;
         if (HttpMethods.IsPost(context.Request.Method))
         {
             context.Request.EnableBuffering();
-            parameters = context.Request.HasFormContentType ? await context.Request.ReadFormAsync(ct) : [];
+            var form = context.Request.HasFormContentType ? await context.Request.ReadFormAsync(ct) : FormCollection.Empty;
             context.Request.Body.Position = 0;
+            (clientId, redirectUri) = (form["client_id"], form["redirect_uri"]);
         }
         else
         {
-            parameters = context.Request.Query;
+            (clientId, redirectUri) = (context.Request.Query["client_id"], context.Request.Query["redirect_uri"]);
         }
-        var clientId = parameters.FirstOrDefault(p => p.Key == "client_id").Value.ToString();
-        var redirectUri = parameters.FirstOrDefault(p => p.Key == "redirect_uri").Value.ToString();
 
         if (UrlClient.TryParse(clientId, out var client))
         {
             await registry.EnsureRegisteredAsync(client!, string.IsNullOrEmpty(redirectUri) ? null : redirectUri, ct);
         }
-        else if (UrlClient.TryParseLocalhost(clientId, out client))
-        {
-            if (!options.Value.AllowLocalhostClients)
-            {
-                throw new SignInStoppedException("The client id http://localhost is for development brokers only.");
-            }
-            await registry.EnsureRegisteredAsync(client!, string.IsNullOrEmpty(redirectUri) ? null : redirectUri, ct);
-        }
-
         await RelayAsync(context, http, rewrite: null, ct);
     }
 
-    private static Task Discovery(HttpContext context, IHttpClientFactory http, IOptions<BrokerOptions> options, CancellationToken ct) =>
-        RelayAsync(context, http, body =>
+    private static Task Discovery(HttpContext context, IHttpClientFactory http, CancellationToken ct) =>
+        RelayAsync(context, http, static (upstream, response, ct) => WriteDiscoveryAsync(upstream, response, ct), ct);
+
+    /// <summary>Hydra's discovery document with the one member it cannot add.</summary>
+    private static async Task WriteDiscoveryAsync(HttpContent upstream, HttpResponse response, CancellationToken ct)
+    {
+        var discovery = await JsonNode.ParseAsync(await upstream.ReadAsStreamAsync(ct), cancellationToken: ct);
+        if (discovery is JsonObject document)
         {
-            if (JsonNode.Parse(body) is not JsonObject discovery)
-            {
-                return body;
-            }
-            discovery["authorization_endpoint"] = $"{options.Value.PublicOrigin.TrimEnd('/')}/oauth2/auth";
-            discovery["client_id_metadata_document_supported"] = true;
-            return discovery.ToJsonString();
-        }, ct);
+            document["client_id_metadata_document_supported"] = true;
+        }
+        await using var writer = new Utf8JsonWriter(response.BodyWriter);
+        (discovery ?? new JsonObject()).WriteTo(writer);
+    }
 
     private static Task Relay(HttpContext context, IHttpClientFactory http, CancellationToken ct) =>
         RelayAsync(context, http, rewrite: null, ct);
@@ -82,10 +72,10 @@ public static class HydraRelay
         "X-Forwarded-For", "X-Forwarded-Proto", "X-Forwarded-Host", "Forwarded",
     };
 
-    private static async Task RelayAsync(HttpContext context, IHttpClientFactory httpClientFactory, Func<string, string>? rewrite, CancellationToken ct)
+    private static async Task RelayAsync(HttpContext context, IHttpClientFactory httpClientFactory, Func<HttpContent, HttpResponse, CancellationToken, Task>? rewrite, CancellationToken ct)
     {
         var request = context.Request;
-        using var upstream = new HttpRequestMessage(new HttpMethod(request.Method), request.Path + request.QueryString);
+        using var upstream = new HttpRequestMessage(HttpMethod.Parse(request.Method), request.Path + request.QueryString);
         if (request.ContentLength > 0 || request.Headers.ContainsKey("Transfer-Encoding"))
         {
             upstream.Content = new StreamContent(request.Body);
@@ -93,9 +83,10 @@ public static class HydraRelay
         foreach (var header in request.Headers)
         {
             if (NotForwarded.Contains(header.Key)) continue;
-            if (!upstream.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray()))
+            IEnumerable<string> values = header.Value!;
+            if (!upstream.Headers.TryAddWithoutValidation(header.Key, values))
             {
-                upstream.Content?.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
+                upstream.Content?.Headers.TryAddWithoutValidation(header.Key, values);
             }
         }
         // What Hydra is told about the outside of this request: the scheme and address this app
@@ -111,14 +102,15 @@ public static class HydraRelay
         using var response = await http.SendAsync(upstream, HttpCompletionOption.ResponseHeadersRead, ct);
 
         context.Response.StatusCode = (int)response.StatusCode;
-        foreach (var header in response.Headers.Concat(response.Content.Headers))
+        // Raw values, unparsed: a relay has no business validating Hydra's headers.
+        foreach (var header in response.Headers.NonValidated.Concat(response.Content.Headers.NonValidated))
         {
             if (NotForwarded.Contains(header.Key) || (rewrite != null && header.Key.Equals("Content-Length", StringComparison.OrdinalIgnoreCase))) continue;
-            context.Response.Headers[header.Key] = header.Value.ToArray();
+            context.Response.Headers[header.Key] = header.Value.Count == 1 ? header.Value.ToString() : header.Value.ToArray();
         }
         if (rewrite != null)
         {
-            await context.Response.WriteAsync(rewrite(await response.Content.ReadAsStringAsync(ct)), ct);
+            await rewrite(response.Content, context.Response, ct);
         }
         else
         {

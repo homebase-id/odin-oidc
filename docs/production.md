@@ -17,8 +17,8 @@ user-defined network, `oidc`, with a fixed subnet (`OIDC_NETWORK`, default `172.
 
 The authorize endpoint and discovery go to the login app, not to Hydra: the app is the gateway
 that registers a URL client from its document before relaying the request to Hydra
-(`docs/relying-parties.md`), and it serves discovery as Hydra's with the authorize endpoint
-pointed at itself and `client_id_metadata_document_supported` added. It relays the rest of
+(`docs/relying-parties.md`), and it serves discovery as Hydra's with
+`client_id_metadata_document_supported` added. It relays the rest of
 Hydra's public API too, so the simplest contract is one upstream, the login app; the split
 below saves the token endpoint and userinfo the extra hop.
 
@@ -133,10 +133,9 @@ returns.
 `scripts/create-test-client.sh` (a server-side application with a secret) are the two shapes; for
 production change the name and the redirect URI, which is the allowlist (https only, matched
 exactly), and add `--skip-consent` for a first-party relying party so the broker's consent page is
-skipped; the owner still approves the sign-in at their own identity. Give them
-`--metadata '{"managed":"operator"}'` so the app never writes to them, and keep a list (name, id,
-redirect URIs, skip consent) with your deployment. This is the path for software that insists on
-a client secret.
+skipped; the owner still approves the sign-in at their own identity. The app never writes to a
+client that is not marked `registered: by-url`. Keep a list (name, id, redirect URIs, skip consent)
+with your deployment. This is the path for software that insists on a client secret.
 
 ## Logging
 

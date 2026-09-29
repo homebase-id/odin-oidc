@@ -17,15 +17,13 @@ public sealed class HydraClient
 }
 
 /// <summary>
-/// Hydra stores any JSON as a client's metadata; these are the members this app writes or reads.
-/// A URL client is <c>registered: by-url</c>; an operator's script may mark its clients
-/// <c>managed: operator</c>, and this app never writes to those.
+/// Hydra stores any JSON as a client's metadata; the one member this app writes and reads. A URL
+/// client is <c>registered: by-url</c>; a client without it was made by an operator and is never
+/// written to.
 /// </summary>
 public sealed class HydraClientMetadata
 {
     public string? Registered { get; set; }
-    public string? Managed { get; set; }
-    public DateTimeOffset? FetchedAt { get; set; }
 }
 
 public sealed class HydraOidcContext

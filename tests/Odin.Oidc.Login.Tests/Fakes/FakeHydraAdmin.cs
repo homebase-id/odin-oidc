@@ -26,7 +26,10 @@ public sealed class FakeHydraAdmin
     public string? ClientName { get; set; } = "Demo relying party";
     public List<string> ClientRedirectUris { get; set; } = ["https://app.example/cb"];
     /// <summary>The authorize request that started the flow, as Hydra reports it.</summary>
-    public string RequestUrl { get; set; } = "http://hydra:4444/oauth2/auth?client_id=rp&redirect_uri=https%3A%2F%2Fapp.example%2Fcb&response_type=code";
+    public string RequestUrl { get; set; } = RequestUrlFor("rp", "https://app.example/cb");
+
+    public static string RequestUrlFor(string clientId, string redirectUri) =>
+        $"http://hydra:4444/oauth2/auth?client_id={Uri.EscapeDataString(clientId)}&redirect_uri={Uri.EscapeDataString(redirectUri)}&response_type=code";
 
     /// <summary>Clients as the admin API stores them (JSON bodies), by id.</summary>
     public Dictionary<string, string> Clients { get; } = new();

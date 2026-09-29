@@ -38,7 +38,7 @@ public class AuthorizeGatewayTests
     public async Task AUrlClientIsRegisteredFromItsDocumentOnFirstSightThenPassedThrough()
     {
         using var app = new BrokerApp();
-        app.Web.Document(Jean, "Jean's wiki", JeanCallback, "https://jean.example/cb2");
+        app.Web.ValidDocument(Jean, "Jean's wiki", JeanCallback, "https://jean.example/cb2");
         using var browser = app.CreateClient();
 
         var response = await browser.GetAsync(Authorize(Jean, JeanCallback));
@@ -60,7 +60,7 @@ public class AuthorizeGatewayTests
     public async Task ASecondSightWithinTheCacheLifetimeNeitherFetchesNorCreates()
     {
         using var app = new BrokerApp();
-        app.Web.Document(Jean, "Jean's wiki", JeanCallback);
+        app.Web.ValidDocument(Jean, "Jean's wiki", JeanCallback);
         using var browser = app.CreateClient();
 
         await browser.GetAsync(Authorize(Jean, JeanCallback));
@@ -75,8 +75,10 @@ public class AuthorizeGatewayTests
     public async Task AKnownClientWhoseDocumentChangedIsUpdated()
     {
         using var app = new BrokerApp();
-        app.Web.Document(Jean, "Jean's wiki", JeanCallback);
+        app.Web.ValidDocument(Jean, "Jean's wiki", JeanCallback);
         app.Hydra.Clients[Jean] = JsonSerializer.Serialize(new { client_id = Jean, client_name = "Old name", redirect_uris = new[] { "https://jean.example/old" }, metadata = new { registered = "by-url" } });
+        app.Hydra.Clients["https://ops.example/app"] = JsonSerializer.Serialize(new { client_id = "https://ops.example/app", client_name = "Operator's", redirect_uris = new[] { "https://ops.example/old" }, metadata = new { } });
+        app.Web.ValidDocument("https://ops.example/app", "Ops", "https://ops.example/cb");
         using var browser = app.CreateClient();
 
         var response = await browser.GetAsync(Authorize(Jean, JeanCallback));
@@ -86,13 +88,16 @@ public class AuthorizeGatewayTests
         var updated = JsonDocument.Parse(app.Hydra.ClientUpdates.Single()).RootElement;
         Assert.That(updated.GetProperty("redirect_uris").EnumerateArray().Select(e => e.GetString()), Is.EqualTo(new[] { JeanCallback }), "a site adds or moves a callback by editing its document");
         Assert.That(updated.GetProperty("client_name").GetString(), Is.EqualTo("Jean's wiki"));
+
+        await browser.GetAsync(Authorize("https://ops.example/app", "https://ops.example/cb"));
+        Assert.That(app.Hydra.ClientUpdates, Has.Count.EqualTo(1), "a client an operator made at a URL id is theirs: checked against its document, never written to");
     }
 
     [Test]
     public async Task ACallbackTheDocumentDoesNotListIsRefusedAtTheBroker()
     {
         using var app = new BrokerApp();
-        app.Web.Document(Jean, "Jean's wiki", JeanCallback);
+        app.Web.ValidDocument(Jean, "Jean's wiki", JeanCallback);
         using var browser = app.CreateClient();
 
         var response = await browser.GetAsync(Authorize(Jean, "https://jean.example/elsewhere"));
@@ -123,7 +128,6 @@ public class AuthorizeGatewayTests
 
         using (var app = new BrokerApp())
         {
-            app.Settings["Broker:AllowLocalhostClients"] = "false"; // the test host is the Development environment, whose settings allow it
             using var browser = app.CreateClient();
             var response = await browser.GetAsync(Authorize(localhost, "http://127.0.0.1:5556/cb"));
             Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest), "production: a loopback client id is never a relying party");
@@ -143,7 +147,7 @@ public class AuthorizeGatewayTests
     }
 
     [Test]
-    public async Task DiscoveryIsHydrasWithTheGatewayAsAuthorizeEndpointAndTheDraftsMember()
+    public async Task DiscoveryIsHydrasWithTheDraftsMemberAdded()
     {
         using var app = new BrokerApp();
         using var browser = app.CreateClient();
@@ -153,9 +157,8 @@ public class AuthorizeGatewayTests
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(response.Content.Headers.ContentType?.MediaType, Is.EqualTo("application/json"));
-        Assert.That(discovery.GetProperty("issuer").GetString(), Is.EqualTo("http://hydra:4444/"), "Hydra's, untouched");
-        Assert.That(discovery.GetProperty("authorization_endpoint").GetString(), Is.EqualTo($"https://{app.PublicHost}/oauth2/auth"), "through this app");
-        Assert.That(discovery.GetProperty("token_endpoint").GetString(), Is.EqualTo("http://hydra:4444/oauth2/token"), "Hydra's");
+        Assert.That(discovery.GetProperty("issuer").GetString(), Is.EqualTo("http://hydra:4444/"), "Hydra's, untouched: the issuer is this app's origin, so every endpoint already names it");
+        Assert.That(discovery.GetProperty("authorization_endpoint").GetString(), Is.EqualTo("http://hydra:4444/oauth2/auth"));
         Assert.That(discovery.GetProperty("client_id_metadata_document_supported").GetBoolean(), Is.True);
     }
 }

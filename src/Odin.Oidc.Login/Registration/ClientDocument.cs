@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.Json;
 
 namespace Odin.Oidc.Login.Registration;
@@ -7,7 +8,41 @@ namespace Odin.Oidc.Login.Registration;
 /// those on its own origin), the name it gives itself, the scope it may ask for, and for how long
 /// this may be believed before the document is read again.
 /// </summary>
-public sealed record ClientDocument(string ClientId, IReadOnlyList<string> RedirectUris, string? Name, IReadOnlyList<string> Scope, TimeSpan CacheFor);
+public sealed record ClientDocument(IReadOnlyList<string> RedirectUris, string? Name, IReadOnlyList<string> Scope, TimeSpan CacheFor)
+{
+    /// <summary>What a document is believed for when it says nothing about caching.</summary>
+    public static readonly TimeSpan DefaultCache = TimeSpan.FromHours(1);
+
+    /// <summary>
+    /// The callback a request may be sent to: the redirect it named when that is one of the
+    /// listed callbacks, the one listed callback when it named none (the draft), else null. The
+    /// match is the same string (RFC 9700); an http loopback callback matches on any port, since
+    /// a native app picks its port at run time (RFC 8252), and only the development client can
+    /// have listed one.
+    /// </summary>
+    public string? ResolveRedirect(string? requested)
+    {
+        if (requested == null)
+        {
+            return RedirectUris.Count == 1 ? RedirectUris[0] : null;
+        }
+        if (RedirectUris.Contains(requested, StringComparer.Ordinal))
+        {
+            return requested;
+        }
+        return Uri.TryCreate(requested, UriKind.Absolute, out var uri) && IsLoopback(requested)
+               && RedirectUris.Any(c => Uri.TryCreate(c, UriKind.Absolute, out var allowed)
+                                        && allowed.Scheme == uri.Scheme && allowed.Host == uri.Host && allowed.AbsolutePath == uri.AbsolutePath)
+            ? requested
+            : null;
+    }
+
+    public static bool IsLoopback(string redirectUri) =>
+        Uri.TryCreate(redirectUri, UriKind.Absolute, out var uri)
+        && uri.Scheme == Uri.UriSchemeHttp
+        && IPAddress.TryParse(uri.Host.Trim('[', ']'), out var address)
+        && IPAddress.IsLoopback(address);
+}
 
 /// <summary>The document could not be fetched or says something a URL client may not; the message says what, for the 400 page.</summary>
 public sealed class ClientDocumentException(string message) : Exception(message);
@@ -22,7 +57,7 @@ public sealed class ClientDocumentFetcher(IHttpClientFactory httpClientFactory, 
 {
     public const string HttpClientName = "client-documents";
 
-    /// <summary>The draft's recommended maximum; a document is a few hundred bytes.</summary>
+    /// <summary>The draft's recommended maximum; a document is a few hundred bytes. Enforced by the HttpClient's buffer size.</summary>
     public const int MaxBytes = 5 * 1024;
 
     /// <summary>A name is a label, not a page; the same cap as odin-core's client document.</summary>
@@ -33,7 +68,6 @@ public sealed class ClientDocumentFetcher(IHttpClientFactory httpClientFactory, 
 
     private static readonly TimeSpan MinCache = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan MaxCache = TimeSpan.FromDays(1);
-    private static readonly TimeSpan DefaultCache = TimeSpan.FromHours(1);
 
     public async Task<ClientDocument> FetchAsync(UrlClient client, CancellationToken ct)
     {
@@ -49,22 +83,18 @@ public sealed class ClientDocumentFetcher(IHttpClientFactory httpClientFactory, 
         {
             // Includes a body over MaxBytes, a refused address, and the timeout.
             logger.LogDebug(e, "No client document from {clientId}: {reason}", client.Id, e.Message);
-            throw new ClientDocumentException($"The client document at {client.Id} could not be read: {e.Message}");
+            throw Refuse(client, $"could not be read: {e.Message}");
         }
 
         using (response)
         {
-            if (response.StatusCode != System.Net.HttpStatusCode.OK)
+            if (response.StatusCode != HttpStatusCode.OK)
             {
                 throw new ClientDocumentException($"{client.Id} answered {(int)response.StatusCode} instead of 200 with its client document. A site that signs people in here publishes one at its client id.");
             }
             if (!string.Equals(response.Content.Headers.ContentType?.MediaType, "application/json", StringComparison.OrdinalIgnoreCase))
             {
-                throw new ClientDocumentException($"The client document at {client.Id} is not served as application/json.");
-            }
-            if (body.Length > MaxBytes)
-            {
-                throw new ClientDocumentException($"The client document at {client.Id} is larger than {MaxBytes} bytes.");
+                throw Refuse(client, "is not served as application/json.");
             }
             return Parse(client, body, CacheLifetime(response));
         }
@@ -80,7 +110,7 @@ public sealed class ClientDocumentFetcher(IHttpClientFactory httpClientFactory, 
         }
         catch (JsonException)
         {
-            throw new ClientDocumentException($"The client document at {client.Id} is not JSON.");
+            throw Refuse(client, "is not JSON.");
         }
 
         using (document)
@@ -88,33 +118,36 @@ public sealed class ClientDocumentFetcher(IHttpClientFactory httpClientFactory, 
             var root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object)
             {
-                throw new ClientDocumentException($"The client document at {client.Id} is not a JSON object.");
+                throw Refuse(client, "is not a JSON object.");
             }
 
             var clientId = StringMember(root, "client_id");
             if (clientId != client.Id)
             {
-                throw new ClientDocumentException($"The client document at {client.Id} says client_id is '{clientId}'; it must be the URL it is served at.");
+                throw Refuse(client, $"says client_id is '{clientId}'; it must be the URL it is served at.");
             }
 
             var authMethod = StringMember(root, "token_endpoint_auth_method");
             if (authMethod != null && authMethod != "none")
             {
-                throw new ClientDocumentException($"The client document at {client.Id} asks for token_endpoint_auth_method '{authMethod}'. A URL client is public: 'none', with PKCE.");
+                throw Refuse(client, $"asks for token_endpoint_auth_method '{authMethod}'. A URL client is public: 'none', with PKCE.");
             }
 
             var redirectUris = client.OwnCallbacks(StringArrayMember(root, "redirect_uris"));
             if (redirectUris.Count == 0)
             {
-                throw new ClientDocumentException($"The client document at {client.Id} lists no https redirect_uris on {client.Origin}. Only callbacks on the site's own origin count.");
+                throw Refuse(client, $"lists no https redirect_uris on {client.Origin}. Only callbacks on the site's own origin count.");
             }
 
             var declared = StringMember(root, "scope")?.Split(' ', StringSplitOptions.RemoveEmptyEntries) ?? [];
             var scope = OfferedScope.Where(s => s == "openid" || declared.Contains(s)).ToList();
 
-            return new ClientDocument(client.Id, redirectUris, CleanName(StringMember(root, "client_name")), scope, cacheFor);
+            return new ClientDocument(redirectUris, CleanName(StringMember(root, "client_name")), scope, cacheFor);
         }
     }
+
+    private static ClientDocumentException Refuse(UrlClient client, string what) =>
+        new($"The client document at {client.Id} {what}");
 
     private static string? StringMember(JsonElement root, string name) =>
         root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
@@ -142,7 +175,7 @@ public sealed class ClientDocumentFetcher(IHttpClientFactory httpClientFactory, 
         var maxAge = response.Headers.CacheControl?.MaxAge;
         if (maxAge == null)
         {
-            return DefaultCache;
+            return ClientDocument.DefaultCache;
         }
         return maxAge.Value < MinCache ? MinCache : maxAge.Value > MaxCache ? MaxCache : maxAge.Value;
     }

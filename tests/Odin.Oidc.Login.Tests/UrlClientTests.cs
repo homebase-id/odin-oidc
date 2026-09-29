@@ -4,8 +4,8 @@ namespace Odin.Oidc.Login.Tests;
 
 /// <summary>
 /// A relying party whose client id is its own https URL (draft-ietf-oauth-client-id-metadata-document):
-/// which strings are one, and which callbacks it may use. Our rule beyond the draft: every callback
-/// sits on the client id's own host, YouAuth's rule.
+/// which strings are one, which callbacks it may use, and which redirect a request may name. Our
+/// rule beyond the draft: every callback sits on the client id's own host, YouAuth's rule.
 /// </summary>
 [TestFixture]
 public class UrlClientTests
@@ -60,25 +60,28 @@ public class UrlClientTests
     }
 
     [Test]
-    public void ACallbackMustMatchOneExactly()
+    public void ARequestsRedirectMustMatchAListedCallbackExactly()
     {
-        UrlClient.TryParse("https://jean.example/wiki", out var client);
-        var callbacks = new[] { "https://jean.example/cb" };
+        var document = new ClientDocument(["https://jean.example/cb"], null, ["openid"], TimeSpan.FromHours(1));
 
-        Assert.That(client!.Allows("https://jean.example/cb", callbacks), Is.True);
-        Assert.That(client.Allows("https://jean.example/cb?x=1", callbacks), Is.False, "exact string match, RFC 9700");
-        Assert.That(client.Allows("https://jean.example/CB", callbacks), Is.False);
+        Assert.That(document.ResolveRedirect("https://jean.example/cb"), Is.EqualTo("https://jean.example/cb"));
+        Assert.That(document.ResolveRedirect("https://jean.example/cb?x=1"), Is.Null, "exact string match, RFC 9700");
+        Assert.That(document.ResolveRedirect("https://jean.example/CB"), Is.Null);
+        Assert.That(document.ResolveRedirect(null), Is.EqualTo("https://jean.example/cb"), "the draft: the one listed callback when the request names none");
+        Assert.That(new ClientDocument(["https://jean.example/a", "https://jean.example/b"], null, ["openid"], TimeSpan.Zero).ResolveRedirect(null), Is.Null, "but not when there are several");
     }
 
     [Test]
-    public void TheLocalhostDevelopmentClientTakesItsCallbacksFromTheQuery()
+    public void TheLocalhostDevelopmentClientIsItsOwnDocument()
     {
-        Assert.That(UrlClient.TryParseLocalhost("http://localhost?redirect_uri=http%3A%2F%2F127.0.0.1%2Fcb&scope=openid%20profile", out var client), Is.True);
+        Assert.That(UrlClient.TryParse("http://localhost?redirect_uri=http%3A%2F%2F127.0.0.1%2Fcb&scope=openid%20profile", out var client), Is.True);
         Assert.That(client!.Id, Is.EqualTo("http://localhost?redirect_uri=http%3A%2F%2F127.0.0.1%2Fcb&scope=openid%20profile"));
         Assert.That(client.Host, Is.EqualTo("localhost"));
-        Assert.That(client.Allows("http://127.0.0.1:5556/cb", client.DeclaredCallbacks), Is.True, "loopback: the port is not matched, the path is");
-        Assert.That(client.Allows("http://127.0.0.1:5556/other", client.DeclaredCallbacks), Is.False);
-        Assert.That(client.DeclaredScope, Is.EqualTo(new[] { "openid", "profile" }));
+        Assert.That(client.Declared, Is.Not.Null, "nothing is fetched");
+        Assert.That(client.Declared!.RedirectUris, Is.EqualTo(new[] { "http://127.0.0.1/cb" }));
+        Assert.That(client.Declared.ResolveRedirect("http://127.0.0.1:5556/cb"), Is.EqualTo("http://127.0.0.1:5556/cb"), "loopback: the port is not matched, the path is");
+        Assert.That(client.Declared.ResolveRedirect("http://127.0.0.1:5556/other"), Is.Null);
+        Assert.That(client.Declared.Scope, Is.EqualTo(new[] { "openid", "profile" }));
     }
 
     [TestCase("http://localhost:3000")]
@@ -86,6 +89,6 @@ public class UrlClientTests
     [TestCase("https://localhost")]
     public void OtherLocalhostFormsAreNotTheDevelopmentClient(string clientId)
     {
-        Assert.That(UrlClient.TryParseLocalhost(clientId, out _), Is.False);
+        Assert.That(UrlClient.TryParse(clientId, out _), Is.False);
     }
 }

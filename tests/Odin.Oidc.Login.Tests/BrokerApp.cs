@@ -34,6 +34,13 @@ public sealed class BrokerApp : WebApplicationFactory<Program>
     /// <summary>The test client says where it is calling from with this header; the app sees it as the connection's remote address.</summary>
     public const string RemoteAddressHeader = "X-Test-Remote-Address";
 
+    static BrokerApp()
+    {
+        // Every app instance would otherwise hold inotify instances for its settings files; a desktop
+        // is often near the per-user limit of 128, and the tests then fail at random.
+        Environment.SetEnvironmentVariable("DOTNET_USE_POLLING_FILE_WATCHER", "1");
+    }
+
     public BrokerApp(string identityDomain = Frodo, string publicHost = "oidc.example.org")
     {
         Identity = new FakeIdentity(identityDomain);
@@ -88,6 +95,9 @@ public sealed class BrokerApp : WebApplicationFactory<Program>
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        // The shipped defaults, not appsettings.Development.json's: a development-only setting is off unless a test turns it on.
+        builder.UseEnvironment("Production");
+        builder.UseSetting("Logging:LogLevel:Default", "Debug");
         var keys = Directory.CreateTempSubdirectory("odin-oidc-keys").FullName;
         builder.UseSetting("Broker:PublicOrigin", $"https://{PublicHost}");
         builder.UseSetting("Broker:ClientName", "Homebase Sign-in");

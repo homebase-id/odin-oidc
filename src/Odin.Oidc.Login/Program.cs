@@ -35,9 +35,10 @@ builder.Services.AddHttpClient(YouAuthClient.HttpClientName, http =>
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
 
 // Hydra's public API, relayed: no redirect followed (they are the browser's), no cookie kept (they are the browser's).
+var hydraPublic = new Uri(options.HydraPublicUrl); // the configure action runs on every CreateClient
 builder.Services.AddHttpClient(HydraRelay.HttpClientName, http =>
     {
-        http.BaseAddress = new Uri(options.HydraPublicUrl);
+        http.BaseAddress = hydraPublic;
         http.Timeout = TimeSpan.FromSeconds(15);
     })
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });

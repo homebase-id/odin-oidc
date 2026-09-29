@@ -16,7 +16,7 @@ public class ClientDocumentTests
     private const string Id = "https://jean.example/wiki";
 
     private static ClientDocumentFetcher Fetcher(FakeWeb web) =>
-        new(new SingleClientFactory(web.Handler), NullLogger<ClientDocumentFetcher>.Instance);
+        new(web.ClientFactory, NullLogger<ClientDocumentFetcher>.Instance);
 
     private static UrlClient Client(string id = Id)
     {
@@ -53,7 +53,7 @@ public class ClientDocumentTests
     public async Task ALongNameIsCapped()
     {
         var web = new FakeWeb();
-        web.Document(Id, "x".PadLeft(200, 'n'), "https://jean.example/cb");
+        web.ValidDocument(Id, "x".PadLeft(200, 'n'), "https://jean.example/cb");
 
         var doc = await Fetcher(web).FetchAsync(Client(), CancellationToken.None);
 
@@ -64,19 +64,18 @@ public class ClientDocumentTests
     public async Task TheCacheLifetimeFollowsTheDocumentsHeaderWithinBounds()
     {
         var web = new FakeWeb();
-        web.Document(Id, "Wiki", "https://jean.example/cb");
-        web.Answers[Id].Headers.TryAddWithoutValidation("Cache-Control", "max-age=7200");
+        var json = """{"client_id":"https://jean.example/wiki","redirect_uris":["https://jean.example/cb"]}""";
+
+        web.Document(Id, json, "max-age=7200");
         Assert.That((await Fetcher(web).FetchAsync(Client(), CancellationToken.None)).CacheFor, Is.EqualTo(TimeSpan.FromHours(2)));
 
-        web.Answers[Id].Headers.Remove("Cache-Control");
-        web.Answers[Id].Headers.TryAddWithoutValidation("Cache-Control", "max-age=10");
+        web.Document(Id, json, "max-age=10");
         Assert.That((await Fetcher(web).FetchAsync(Client(), CancellationToken.None)).CacheFor, Is.EqualTo(TimeSpan.FromMinutes(5)), "never below five minutes");
 
-        web.Answers[Id].Headers.Remove("Cache-Control");
-        web.Answers[Id].Headers.TryAddWithoutValidation("Cache-Control", "max-age=999999");
+        web.Document(Id, json, "max-age=999999");
         Assert.That((await Fetcher(web).FetchAsync(Client(), CancellationToken.None)).CacheFor, Is.EqualTo(TimeSpan.FromDays(1)), "never above a day");
 
-        web.Answers[Id].Headers.Remove("Cache-Control");
+        web.Document(Id, json);
         Assert.That((await Fetcher(web).FetchAsync(Client(), CancellationToken.None)).CacheFor, Is.EqualTo(TimeSpan.FromHours(1)), "an hour when it says nothing");
     }
 
@@ -108,9 +107,7 @@ public class ClientDocumentTests
     public void ARedirectAnswerIsNotFollowed()
     {
         var web = new FakeWeb();
-        var moved = new HttpResponseMessage(HttpStatusCode.MovedPermanently);
-        moved.Headers.Location = new Uri("https://jean.example/elsewhere");
-        web.Answers[Id] = moved;
+        web.Answers[Id] = () => new HttpResponseMessage(HttpStatusCode.MovedPermanently) { Headers = { Location = new Uri("https://jean.example/elsewhere") } };
 
         Assert.That(() => Fetcher(web).FetchAsync(Client(), CancellationToken.None),
             Throws.InstanceOf<ClientDocumentException>().With.Message.Contains("301"));
@@ -124,10 +121,5 @@ public class ClientDocumentTests
 
         Assert.That(() => Fetcher(web).FetchAsync(Client(), CancellationToken.None),
             Throws.InstanceOf<ClientDocumentException>());
-    }
-
-    private sealed class SingleClientFactory(HttpMessageHandler handler) : IHttpClientFactory
-    {
-        public HttpClient CreateClient(string name) => new(handler, disposeHandler: false) { MaxResponseContentBufferSize = ClientDocumentFetcher.MaxBytes };
     }
 }

@@ -102,11 +102,6 @@ public sealed class FakeIdentity
         }
     }
 
-    private sealed class SingleClientFactory(HttpMessageHandler handler) : IHttpClientFactory
-    {
-        public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
-    }
-
     private (byte[] iv, byte[] cipherText) Seal(byte[] plain) => SealWith == "aes-gcm"
         ? AesGcm.Encrypt(plain, _exchangeSecret!)
         : Odin.Core.Cryptography.Crypto.AesCbc.Encrypt(plain, _exchangeSecret!);

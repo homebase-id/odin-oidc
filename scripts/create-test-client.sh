@@ -7,7 +7,6 @@ cd "$(dirname "$0")/../docker"
 docker compose exec hydra hydra create client \
   --endpoint http://127.0.0.1:4445 \
   --format json \
-  --metadata '{"managed":"operator"}' \
   --name "Demo relying party" \
   --grant-type authorization_code,refresh_token \
   --response-type code \

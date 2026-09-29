@@ -20,7 +20,7 @@ public sealed class HydraAdminClient(HttpClient http)
     };
 
     public Task<HydraLoginRequest> GetLoginRequestAsync(string challenge, CancellationToken ct) =>
-        GetAsync<HydraLoginRequest>(Url("login", "", challenge), ct);
+        GetAsync<HydraLoginRequest>(Url("login", "", challenge), ct)!;
 
     public Task<string> AcceptLoginAsync(string challenge, HydraAcceptLogin accept, CancellationToken ct) =>
         PutAsync(Url("login", "/accept", challenge), accept, ct);
@@ -29,7 +29,7 @@ public sealed class HydraAdminClient(HttpClient http)
         PutAsync(Url("login", "/reject", challenge), reject, ct);
 
     public Task<HydraConsentRequest> GetConsentRequestAsync(string challenge, CancellationToken ct) =>
-        GetAsync<HydraConsentRequest>(Url("consent", "", challenge), ct);
+        GetAsync<HydraConsentRequest>(Url("consent", "", challenge), ct)!;
 
     public Task<string> AcceptConsentAsync(string challenge, HydraAcceptConsent accept, CancellationToken ct) =>
         PutAsync(Url("consent", "/accept", challenge), accept, ct);
@@ -41,15 +41,8 @@ public sealed class HydraAdminClient(HttpClient http)
         PutAsync(Url("logout", "/accept", challenge), new { }, ct);
 
     /// <summary>The client by its id, or null when Hydra has none.</summary>
-    public async Task<HydraClient?> GetClientAsync(string clientId, CancellationToken ct)
-    {
-        using var response = await http.GetAsync(ClientUrl(clientId), ct);
-        if (response.StatusCode == HttpStatusCode.NotFound)
-        {
-            return null;
-        }
-        return Parse<HydraClient>(await AnsweredAsync(response, ClientUrl(clientId), ct), ClientUrl(clientId));
-    }
+    public Task<HydraClient?> GetClientAsync(string clientId, CancellationToken ct) =>
+        GetAsync<HydraClient>(ClientUrl(clientId), ct, notFoundIsNull: true);
 
     /// <summary>Creates the client; one created meanwhile by another instance (409) is as good.</summary>
     public async Task CreateClientAsync(HydraClient client, CancellationToken ct)
@@ -88,9 +81,13 @@ public sealed class HydraAdminClient(HttpClient http)
     private static string Url(string flow, string action, string challenge) =>
         $"admin/oauth2/auth/requests/{flow}{action}?{flow}_challenge={Uri.EscapeDataString(challenge)}";
 
-    private async Task<T> GetAsync<T>(string url, CancellationToken ct)
+    private async Task<T?> GetAsync<T>(string url, CancellationToken ct, bool notFoundIsNull = false)
     {
         using var response = await http.GetAsync(url, ct);
+        if (notFoundIsNull && response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return default;
+        }
         return Parse<T>(await AnsweredAsync(response, url, ct), url);
     }
 

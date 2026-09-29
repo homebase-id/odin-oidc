@@ -19,75 +19,66 @@ public sealed class UrlClient
     /// <summary>Scheme, host and port: every callback must sit here.</summary>
     public string Origin { get; }
 
-    /// <summary>ATProto's <c>http://localhost</c> client for development: never fetched, its callbacks and scope are in the id's query.</summary>
-    public bool IsLocalhostDevelopment { get; }
+    /// <summary>
+    /// ATProto's <c>http://localhost</c> development client is its own document: callbacks and
+    /// scope come from the id's query and nothing is fetched. Null for every other client.
+    /// </summary>
+    public ClientDocument? Declared { get; }
 
-    public IReadOnlyList<string> DeclaredCallbacks { get; }
-    public IReadOnlyList<string> DeclaredScope { get; }
+    private readonly int _port;
 
-    private UrlClient(string id, Uri uri, bool localhost, IReadOnlyList<string> callbacks, IReadOnlyList<string> scope)
+    private UrlClient(string id, Uri uri, ClientDocument? declared)
     {
         Id = id;
         Host = uri.IdnHost;
         Origin = $"{uri.Scheme}://{uri.IdnHost}{(uri.IsDefaultPort ? "" : ":" + uri.Port)}";
-        IsLocalhostDevelopment = localhost;
-        DeclaredCallbacks = callbacks;
-        DeclaredScope = scope;
+        Declared = declared;
+        _port = uri.Port;
     }
 
     /// <summary>
     /// The draft's client id: https, a host name (not an address), a path, no userinfo, no fragment,
     /// no single- or double-dot segment. Our policy beyond it: no query, since nothing in a document
-    /// URL needs one and the id is shown to people. Anything else is an operator-registered id.
+    /// URL needs one and the id is shown to people. Also the development client, exactly
+    /// <c>http://localhost</c> with an optional query of <c>redirect_uri</c> (repeatable, loopback
+    /// only) and <c>scope</c>. Anything else is an operator-registered id.
     /// </summary>
     public static bool TryParse(string? clientId, out UrlClient? client)
     {
         client = null;
+        if (clientId == null)
+        {
+            return false;
+        }
+        if (clientId == "http://localhost" || clientId.StartsWith("http://localhost?", StringComparison.Ordinal))
+        {
+            var localhost = new Uri(clientId, UriKind.Absolute);
+            var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(localhost.Query);
+            var callbacks = query.TryGetValue("redirect_uri", out var redirects)
+                ? redirects.Where(r => r != null && ClientDocument.IsLoopback(r)).Select(r => r!).ToList()
+                : ["http://127.0.0.1/", "http://[::1]/"];
+            var scope = query.TryGetValue("scope", out var scopes)
+                ? scopes.ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList()
+                : ["openid"];
+            client = new UrlClient(clientId, localhost, new ClientDocument(callbacks, null, scope, ClientDocument.DefaultCache));
+            return true;
+        }
+
         const string prefix = "https://";
-        if (clientId == null || !clientId.StartsWith(prefix, StringComparison.Ordinal)
+        if (!clientId.StartsWith(prefix, StringComparison.Ordinal)
             || clientId.IndexOfAny(['#', '?', '@']) >= 0
             || !Uri.TryCreate(clientId, UriKind.Absolute, out var uri)
             || uri.HostNameType != UriHostNameType.Dns)
         {
             return false;
         }
-
         var pathStart = clientId.IndexOf('/', prefix.Length);
-        if (pathStart < 0)
+        if (pathStart < 0 || clientId[pathStart..].Split('/').Any(segment => segment is "." or ".."))
         {
-            return false; // no path component
-        }
-        if (clientId[pathStart..].Split('/').Any(segment => segment is "." or ".."))
-        {
-            return false;
+            return false; // no path component, or a dot segment
         }
 
-        client = new UrlClient(clientId, uri, localhost: false, [], []);
-        return true;
-    }
-
-    /// <summary>
-    /// ATProto's development client, exactly <c>http://localhost</c> with an optional query of
-    /// <c>redirect_uri</c> (repeatable) and <c>scope</c>. Its callbacks are loopback addresses
-    /// (RFC 8252: the port is chosen at run time and not matched).
-    /// </summary>
-    public static bool TryParseLocalhost(string? clientId, out UrlClient? client)
-    {
-        client = null;
-        if (clientId == null || !(clientId == "http://localhost" || clientId.StartsWith("http://localhost?", StringComparison.Ordinal)))
-        {
-            return false;
-        }
-
-        var uri = new Uri(clientId, UriKind.Absolute);
-        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
-        var callbacks = query.TryGetValue("redirect_uri", out var redirects)
-            ? redirects.Where(r => r != null && IsLoopback(r)).Select(r => r!).ToList()
-            : ["http://127.0.0.1/", "http://[::1]/"];
-        var scope = query.TryGetValue("scope", out var scopes)
-            ? scopes.ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList()
-            : ["openid"];
-        client = new UrlClient(clientId, uri, localhost: true, callbacks, scope);
+        client = new UrlClient(clientId, uri, null);
         return true;
     }
 
@@ -96,30 +87,6 @@ public sealed class UrlClient
         redirectUris.Where(r => Uri.TryCreate(r, UriKind.Absolute, out var uri)
                                 && uri.Scheme == Uri.UriSchemeHttps
                                 && string.Equals(uri.IdnHost, Host, StringComparison.OrdinalIgnoreCase)
-                                && uri.IsDefaultPort == new Uri(Origin).IsDefaultPort
-                                && uri.Port == new Uri(Origin).Port)
+                                && uri.Port == _port)
             .ToList();
-
-    /// <summary>
-    /// Whether the request's redirect is one of the callbacks: the same string (RFC 9700), or for
-    /// the development client the same loopback scheme, host and path whatever the port.
-    /// </summary>
-    public bool Allows(string redirectUri, IReadOnlyList<string> callbacks)
-    {
-        if (!IsLocalhostDevelopment)
-        {
-            return callbacks.Contains(redirectUri, StringComparer.Ordinal);
-        }
-        return Uri.TryCreate(redirectUri, UriKind.Absolute, out var requested)
-               && callbacks.Any(c => Uri.TryCreate(c, UriKind.Absolute, out var allowed)
-                                     && allowed.Scheme == requested.Scheme
-                                     && allowed.Host == requested.Host
-                                     && allowed.AbsolutePath == requested.AbsolutePath);
-    }
-
-    private static bool IsLoopback(string redirectUri) =>
-        Uri.TryCreate(redirectUri, UriKind.Absolute, out var uri)
-        && uri.Scheme == Uri.UriSchemeHttp
-        && IPAddress.TryParse(uri.Host.Trim('[', ']'), out var address)
-        && IPAddress.IsLoopback(address);
 }
