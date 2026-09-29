@@ -154,8 +154,9 @@ restart the container on. Probe `/.well-known/openid-configuration` too.
 
 1. The backup ran once and the verify-restore passed, even on the empty database.
 2. `/try` on the deployed origin signs someone in and shows their claims. It is the broker as a
-   relying party of itself, a URL client with nothing registered, so it proves the gateway, the
-   document fetch over the public origin, the consent page and the token exchange in one go; their
+   relying party of itself, a URL client with nothing registered, and every request it makes goes
+   to the public origin, so it proves the gateway, the document fetch, the proxy's routes for the
+   token endpoint and userinfo, the consent page and the exchange itself in one go; their
    identity's consent page names the broker by its published name, since the YouAuth client
    document is fetched from the real origin for the first time.
 3. A signing-key rotation rehearsed: id_tokens issued before still verify against the JWKS.

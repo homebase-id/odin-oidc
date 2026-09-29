@@ -46,6 +46,10 @@ builder.Services.AddHttpClient(HydraRelay.HttpClientName, http =>
     })
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
 
+// The try-it relying party, speaking to this app's own public origin like any other site would.
+builder.Services.AddHttpClient(TryRelyingParty.HttpClientName, http => http.Timeout = TimeSpan.FromSeconds(15))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
+
 // Reads a URL client's document: a third party's small JSON, from a public address only.
 builder.Services.AddHttpClient(ClientDocumentFetcher.HttpClientName, http =>
     {

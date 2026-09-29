@@ -15,7 +15,7 @@ namespace Odin.Oidc.Login.Pages;
 public sealed class TryCallbackModel(TryRelyingParty relyingParty, TryFlowCookie cookie) : PageModel
 {
     public TryResult? Result { get; private set; }
-    public string? Refusal { get; private set; }
+    public string Refusal { get; private set; } = "";
 
     public async Task<IActionResult> OnGetAsync(
         [FromQuery(Name = "code")] string? code,
@@ -24,20 +24,14 @@ public sealed class TryCallbackModel(TryRelyingParty relyingParty, TryFlowCookie
         [FromQuery(Name = "error_description")] string? errorDescription,
         CancellationToken ct)
     {
-        var flow = cookie.Read(Request);
-        if (flow == null || string.IsNullOrEmpty(state) || state != flow.State)
-        {
-            throw new SignInStoppedException("This try was not started here or has expired. Start again from the Try page.");
-        }
-        cookie.Delete(Response);
-
+        var flow = cookie.Claim(Request, Response, state, f => f.State, "This try was not started here or has expired. Start again from the Try page.");
         if (!string.IsNullOrEmpty(error))
         {
-            Refusal = $"{error}{(string.IsNullOrEmpty(errorDescription) ? "" : ": " + errorDescription)}";
+            Refusal = OAuthError.Describe(error, errorDescription);
             return Page();
         }
 
-        Result = await relyingParty.CompleteAsync(SignInStoppedException.Required(code, "code"), flow, Request.Scheme, ct);
+        Result = await relyingParty.CompleteAsync(SignInStoppedException.Required(code, "code"), flow, ct);
         return Page();
     }
 }

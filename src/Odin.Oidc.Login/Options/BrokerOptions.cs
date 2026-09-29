@@ -43,5 +43,8 @@ public sealed class BrokerOptions
     public int FormPostsPerMinute { get; set; } = 20;
 
     public string PublicHost => new Uri(PublicOrigin).Host;
-    public string CallbackUri => $"{PublicOrigin.TrimEnd('/')}/youauth/callback";
+    public string CallbackUri => Url("/youauth/callback");
+
+    /// <summary>An absolute URL on the public origin, whether or not the origin was configured with a trailing slash.</summary>
+    public string Url(string path) => $"{PublicOrigin.TrimEnd('/')}{path}";
 }

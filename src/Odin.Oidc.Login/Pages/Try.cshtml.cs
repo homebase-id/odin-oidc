@@ -10,10 +10,6 @@ namespace Odin.Oidc.Login.Pages;
 [EnableRateLimiting(FormPostLimiter.Policy)]
 public sealed class TryModel(TryRelyingParty relyingParty, TryFlowCookie cookie) : PageModel
 {
-    public void OnGet()
-    {
-    }
-
     public IActionResult OnPost()
     {
         var (state, authorizeUrl) = relyingParty.Begin();

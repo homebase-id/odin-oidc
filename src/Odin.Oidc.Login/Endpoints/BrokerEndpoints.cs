@@ -1,7 +1,6 @@
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
-using Odin.Core;
 using Odin.Oidc.Login.Flow;
 using Odin.Oidc.Login.Hydra;
 using Odin.Oidc.Login.Options;
@@ -22,7 +21,7 @@ public static class BrokerEndpoints
         app.MapGet("/youauth/callback", YouAuthCallback).RequireRateLimiting(FormPostLimiter.Policy);
         app.MapGet("/logout", Logout);
         app.MapGet("/.well-known/youauth-client.json", ClientDocument);
-        app.MapGet("/try/client.json", TryClientDocument);
+        app.MapGet(TryRelyingParty.DocumentPath, TryClientDocument);
         app.MapGet("/healthz", Health);
     }
 
@@ -43,17 +42,8 @@ public static class BrokerEndpoints
         ILogger<YouAuthClient> logger,
         CancellationToken ct)
     {
-        // The callback belongs to the flow in the cookie or it is nobody's: without the cookie, or
-        // with a state that is not its, a forged or replayed callback cannot be matched to a Hydra
-        // challenge.
-        var flow = cookie.Read(context.Request);
-        if (flow == null || string.IsNullOrEmpty(state) ||
-            !CryptographicOperations.FixedTimeEquals(state.ToUtf8ByteArray(), flow.State.ToUtf8ByteArray()))
-        {
-            throw new SignInStoppedException("This sign-in has expired or was not started here. Start again from the site you were signing in to.");
-        }
-
-        cookie.Delete(context.Response);
+        var flow = cookie.Claim(context.Request, context.Response, state, f => f.State,
+            "This sign-in has expired or was not started here. Start again from the site you were signing in to.");
 
         // YouAuth [060]: the identity reported a failure, or the owner declined.
         if (!string.IsNullOrEmpty(error))
@@ -63,7 +53,7 @@ public static class BrokerEndpoints
             var redirect = await hydra.RejectLoginAsync(flow.LoginChallenge, new HydraReject
             {
                 Error = "access_denied",
-                ErrorDescription = $"{flow.Identity} did not authorize the sign-in ({error}{(string.IsNullOrEmpty(errorDescription) ? "" : ": " + errorDescription)})",
+                ErrorDescription = $"{flow.Identity} did not authorize the sign-in ({OAuthError.Describe(error, errorDescription)})",
             }, ct);
             return Results.Redirect(redirect);
         }
@@ -117,10 +107,14 @@ public static class BrokerEndpoints
     }
 
     /// <summary>The try-it relying party's client document: this app's own registration as a URL client (Try/TryRelyingParty.cs).</summary>
-    private static IResult TryClientDocument(IOptions<BrokerOptions> options, HttpContext context)
+    private static IResult TryClientDocument(TryRelyingParty relyingParty, HttpContext context) =>
+        CachedJson(context, relyingParty.Document);
+
+    /// <summary>A document about this app that may be cached for the same hour a client document is believed for.</summary>
+    private static IResult CachedJson(HttpContext context, object document)
     {
-        context.Response.Headers.CacheControl = "public, max-age=3600";
-        return Results.Json(TryRelyingParty.Document(options.Value));
+        context.Response.Headers.CacheControl = $"public, max-age={(int)Registration.ClientDocument.DefaultCache.TotalSeconds}";
+        return Results.Json(document);
     }
 
     /// <summary>
@@ -128,10 +122,6 @@ public static class BrokerEndpoints
     /// (odin-core docs/youauth-client-metadata-plan.md): the name shown small under the domain on
     /// the consent page, and the only callback the identity will redirect to.
     /// </summary>
-    private static IResult ClientDocument(IOptions<BrokerOptions> options, HttpContext context)
-    {
-        var broker = options.Value;
-        context.Response.Headers.CacheControl = "public, max-age=3600";
-        return Results.Json(new { name = broker.ClientName, redirect_uris = new[] { broker.CallbackUri } });
-    }
+    private static IResult ClientDocument(IOptions<BrokerOptions> options, HttpContext context) =>
+        CachedJson(context, new { name = options.Value.ClientName, redirect_uris = new[] { options.Value.CallbackUri } });
 }
